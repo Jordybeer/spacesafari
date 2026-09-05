@@ -6,6 +6,15 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
+export const dynamic = "force-dynamic";
+
 export default function SetupPage() {
-  return <SetupClient />;
+  const readiness = {
+    telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME && process.env.TELEGRAM_WEBHOOK_SECRET),
+    redis: Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
+    qstash: Boolean(process.env.QSTASH_TOKEN && process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY),
+    mapAdmin: Boolean(process.env.MAP_ADMIN_TELEGRAM_IDS?.trim()),
+  };
+
+  return <SetupClient readiness={readiness} />;
 }

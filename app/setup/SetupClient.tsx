@@ -2,7 +2,14 @@
 
 import { useState } from "react";
 
-export default function SetupClient() {
+type Readiness = {
+  telegram: boolean;
+  redis: boolean;
+  qstash: boolean;
+  mapAdmin: boolean;
+};
+
+export default function SetupClient({ readiness }: { readiness: Readiness }) {
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -41,11 +48,28 @@ export default function SetupClient() {
     }
   }
 
+  const rows: Array<[string, boolean, string]> = [
+    ["Telegram bot", readiness.telegram, "token + username + webhook secret"],
+    ["Live map & opslag", readiness.redis, "Upstash Redis"],
+    ["15-minuten pings", readiness.redis && readiness.qstash, "Redis + QStash"],
+    ["GPS-kalibratie admin", readiness.mapAdmin, "Telegram user ID allowlist"],
+  ];
+
   return (
     <main className="landing-shell">
       <section className="festival-card landing-card">
         <div className="eyebrow">BOT SETUP</div>
         <div className="wordmark">SPACE<br />SAFARI</div>
+        <p className="lede">Runtime readiness</p>
+        <div style={{ display: "grid", gap: 8, width: "100%", marginBottom: 18 }}>
+          {rows.map(([label, ready, detail]) => (
+            <div key={label} className={`notice ${ready ? "" : "error-notice"}`} style={{ margin: 0, textAlign: "left" }}>
+              <strong>{ready ? "✅" : "⏳"} {label}</strong><br />
+              <span className="microcopy">{ready ? "klaar" : `nog nodig: ${detail}`}</span>
+            </div>
+          ))}
+        </div>
+
         <p className="lede">Telegram webhook activeren</p>
         <p className="microcopy">
           Plak hier dezelfde waarde die in Vercel staat als TELEGRAM_WEBHOOK_SECRET.
@@ -61,9 +85,10 @@ export default function SetupClient() {
           onChange={(event) => setSecret(event.target.value)}
           onKeyDown={(event) => { if (event.key === "Enter") void register(); }}
         />
-        <button className="primary-button" type="button" disabled={busy || !secret.trim()} onClick={() => void register()}>
+        <button className="primary-button" type="button" disabled={busy || !secret.trim() || !readiness.telegram} onClick={() => void register()}>
           {busy ? "Verbinden…" : "🔗 Activeer Telegram webhook"}
         </button>
+        {!readiness.telegram && <div className="notice error-notice">Telegram-configuratie is nog niet compleet in Vercel.</div>}
         {message && <div className={`notice ${ok ? "" : "error-notice"}`}>{ok ? "✅ " : "⚠️ "}{message}</div>}
       </section>
     </main>
