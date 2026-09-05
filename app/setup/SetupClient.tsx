@@ -4,6 +4,8 @@ import { useState } from "react";
 
 type Readiness = {
   telegram: boolean;
+  webhookActive: boolean;
+  webhookPending: number | null;
   redis: boolean;
   qstash: boolean;
   mapAdmin: boolean;
@@ -13,6 +15,7 @@ type ReadinessRow = {
   label: string;
   ready: boolean;
   missing: string;
+  detail?: string;
   href?: string;
   action?: string;
 };
@@ -59,6 +62,14 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
   const rows: ReadinessRow[] = [
     { label: "Telegram bot", ready: readiness.telegram, missing: "token + username + webhook secret" },
     {
+      label: "Telegram webhook",
+      ready: readiness.webhookActive,
+      missing: "webhook nog activeren",
+      detail: readiness.webhookActive && readiness.webhookPending !== null
+        ? `${readiness.webhookPending} pending update${readiness.webhookPending === 1 ? "" : "s"}`
+        : undefined,
+    },
+    {
       label: "Live map & opslag",
       ready: readiness.redis,
       missing: "Upstash Redis",
@@ -85,7 +96,7 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
           {rows.map((row) => (
             <div key={row.label} className={`notice ${row.ready ? "" : "error-notice"}`} style={{ margin: 0, textAlign: "left" }}>
               <strong>{row.ready ? "✅" : "⏳"} {row.label}</strong><br />
-              <span className="microcopy">{row.ready ? "klaar" : `nog nodig: ${row.missing}`}</span>
+              <span className="microcopy">{row.ready ? (row.detail || "klaar") : `nog nodig: ${row.missing}`}</span>
               {!row.ready && row.href && (
                 <>
                   <br />
@@ -103,7 +114,7 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
           </p>
         )}
 
-        <p className="lede">Telegram webhook activeren</p>
+        <p className="lede">{readiness.webhookActive ? "Webhook & commando's vernieuwen" : "Telegram webhook activeren"}</p>
         <p className="microcopy">
           Plak hier dezelfde waarde die in Vercel staat als TELEGRAM_WEBHOOK_SECRET.
           De waarde wordt alleen naar deze server gestuurd en niet opgeslagen in je browser.
@@ -119,7 +130,7 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
           onKeyDown={(event) => { if (event.key === "Enter") void register(); }}
         />
         <button className="primary-button" type="button" disabled={busy || !secret.trim() || !readiness.telegram} onClick={() => void register()}>
-          {busy ? "Verbinden…" : "🔗 Activeer Telegram webhook"}
+          {busy ? "Verbinden…" : readiness.webhookActive ? "🔄 Vernieuw webhook + commands" : "🔗 Activeer Telegram webhook"}
         </button>
         {!readiness.telegram && <div className="notice error-notice">Telegram-configuratie is nog niet compleet in Vercel.</div>}
         {message && <div className={`notice ${ok ? "" : "error-notice"}`}>{ok ? "✅ " : "⚠️ "}{message}</div>}
