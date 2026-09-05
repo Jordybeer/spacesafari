@@ -82,10 +82,21 @@ export function answerCallbackQuery(callbackQueryId: string, text?: string) {
 }
 
 export function mapMiniAppUrl(startParam = "map"): string {
-  const username = process.env.TELEGRAM_BOT_USERNAME;
+  const username = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "");
   const shortName = process.env.TELEGRAM_MINI_APP_SHORT_NAME;
+  const encodedStartParam = encodeURIComponent(startParam);
+
   if (username && shortName) {
-    return `https://t.me/${username.replace(/^@/, "")}/${shortName}?startapp=${encodeURIComponent(startParam)}`;
+    return `https://t.me/${username}/${shortName}?startapp=${encodedStartParam}`;
   }
-  return `${requireEnv("APP_URL")}/map?startapp=${encodeURIComponent(startParam)}`;
+
+  // A configured Main Mini App does not need a short name. This deep link keeps
+  // Telegram launch context/initData intact, unlike opening APP_URL as a normal URL.
+  if (username) {
+    return `https://t.me/${username}?startapp=${encodedStartParam}`;
+  }
+
+  // Browser-only fallback for development. Live Telegram map launches should use
+  // one of the t.me links above so the server can validate Telegram initData.
+  return `${requireEnv("APP_URL")}/map?startapp=${encodedStartParam}`;
 }
