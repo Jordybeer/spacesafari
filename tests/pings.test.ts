@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const state = vi.hoisted(() => ({
   kv: new Map<string, unknown>(),
   sets: new Map<string, Set<string>>(),
-  published: [] as unknown[],
+  published: [] as Array<{ topic: string; payload: unknown; options: unknown }>,
 }));
 
 vi.mock("@/src/lib/storage", () => ({
@@ -25,9 +25,10 @@ vi.mock("@/src/lib/storage", () => ({
   }),
 }));
 
-vi.mock("@upstash/qstash", () => ({
-  Client: class {
-    async publishJSON(payload: unknown) { state.published.push(payload); return { messageId: "msg-1" }; }
+vi.mock("@vercel/queue", () => ({
+  send: async (topic: string, payload: unknown, options: unknown) => {
+    state.published.push({ topic, payload, options });
+    return { messageId: "msg-1" };
   },
 }));
 
@@ -37,8 +38,6 @@ import { performerSets } from "@/src/data/timetable";
 describe("artist pings", () => {
   beforeEach(() => {
     state.kv.clear(); state.sets.clear(); state.published.length = 0;
-    process.env.QSTASH_TOKEN = "test";
-    process.env.APP_URL = "https://festival.example";
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-09-05T10:00:00Z"));
   });
@@ -51,7 +50,13 @@ describe("artist pings", () => {
     const second = await createPing("42", set);
     expect(first.duplicate).toBe(false);
     expect(second.duplicate).toBe(true);
+    expect(first.ping.queueMessageId).toBe("msg-1");
     expect(state.published).toHaveLength(1);
+    expect(state.published[0]).toMatchObject({
+      topic: "space-safari-ping-reminders",
+      payload: { chatId: "42", artistSetId: set.id, hop: 0 },
+      options: { retentionSeconds: 604800 },
+    });
     expect(await listPings("42")).toHaveLength(1);
   });
 
