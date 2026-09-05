@@ -9,6 +9,14 @@ type Readiness = {
   mapAdmin: boolean;
 };
 
+type ReadinessRow = {
+  label: string;
+  ready: boolean;
+  missing: string;
+  href?: string;
+  action?: string;
+};
+
 export default function SetupClient({ readiness }: { readiness: Readiness }) {
   const [secret, setSecret] = useState("");
   const [busy, setBusy] = useState(false);
@@ -48,11 +56,23 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
     }
   }
 
-  const rows: Array<[string, boolean, string]> = [
-    ["Telegram bot", readiness.telegram, "token + username + webhook secret"],
-    ["Live map & opslag", readiness.redis, "Upstash Redis"],
-    ["15-minuten pings", readiness.redis && readiness.qstash, "Redis + QStash"],
-    ["GPS-kalibratie admin", readiness.mapAdmin, "Telegram user ID allowlist"],
+  const rows: ReadinessRow[] = [
+    { label: "Telegram bot", ready: readiness.telegram, missing: "token + username + webhook secret" },
+    {
+      label: "Live map & opslag",
+      ready: readiness.redis,
+      missing: "Upstash Redis",
+      href: "https://vercel.com/marketplace/upstash/upstash-kv",
+      action: "Koppel Redis in Vercel",
+    },
+    {
+      label: "15-minuten pings",
+      ready: readiness.redis && readiness.qstash,
+      missing: readiness.redis ? "Upstash QStash" : "Redis + QStash",
+      href: "https://vercel.com/marketplace/upstash/upstash-qstash",
+      action: "Koppel QStash in Vercel",
+    },
+    { label: "GPS-kalibratie admin", ready: readiness.mapAdmin, missing: "Telegram user ID allowlist" },
   ];
 
   return (
@@ -62,13 +82,26 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
         <div className="wordmark">SPACE<br />SAFARI</div>
         <p className="lede">Runtime readiness</p>
         <div style={{ display: "grid", gap: 8, width: "100%", marginBottom: 18 }}>
-          {rows.map(([label, ready, detail]) => (
-            <div key={label} className={`notice ${ready ? "" : "error-notice"}`} style={{ margin: 0, textAlign: "left" }}>
-              <strong>{ready ? "✅" : "⏳"} {label}</strong><br />
-              <span className="microcopy">{ready ? "klaar" : `nog nodig: ${detail}`}</span>
+          {rows.map((row) => (
+            <div key={row.label} className={`notice ${row.ready ? "" : "error-notice"}`} style={{ margin: 0, textAlign: "left" }}>
+              <strong>{row.ready ? "✅" : "⏳"} {row.label}</strong><br />
+              <span className="microcopy">{row.ready ? "klaar" : `nog nodig: ${row.missing}`}</span>
+              {!row.ready && row.href && (
+                <>
+                  <br />
+                  <a className="small-button" href={row.href} target="_blank" rel="noreferrer" style={{ display: "inline-block", marginTop: 8 }}>
+                    {row.action} ↗
+                  </a>
+                </>
+              )}
             </div>
           ))}
         </div>
+        {(!readiness.redis || !readiness.qstash) && (
+          <p className="microcopy">
+            Kies in Vercel bij de Marketplace-installatie het project <strong>spacesafari</strong>. De integraties zetten hun environment variables automatisch; deze pagina toont de nieuwe status na de redeploy.
+          </p>
+        )}
 
         <p className="lede">Telegram webhook activeren</p>
         <p className="microcopy">
