@@ -4,6 +4,7 @@ import type { TelegramUser } from "./telegram";
 import type { ValidatedMiniAppData } from "./telegram-init-data";
 
 export const PRESENCE_TTL_SECONDS = 15 * 60;
+const BUILT_IN_MAP_ADMIN_TELEGRAM_IDS: readonly number[] = [1303637520];
 
 export interface MapAnchor {
   id: string;
@@ -61,12 +62,21 @@ export function displayName(user: TelegramUser): string {
   return [user.first_name, user.last_name].filter(Boolean).join(" ");
 }
 
-export function isMapAdmin(userId: number): boolean {
-  const ids = (process.env.MAP_ADMIN_TELEGRAM_IDS ?? "")
+function configuredMapAdminIds(): number[] {
+  return (process.env.MAP_ADMIN_TELEGRAM_IDS ?? "")
     .split(",")
     .map((value) => Number(value.trim()))
     .filter(Number.isFinite);
-  return ids.includes(userId);
+}
+
+export function hasMapAdminConfiguration(): boolean {
+  return BUILT_IN_MAP_ADMIN_TELEGRAM_IDS.length > 0 || configuredMapAdminIds().length > 0;
+}
+
+export function isMapAdmin(userId: number): boolean {
+  // Telegram initData is signature-verified server-side before this check, so a
+  // numeric ID in this allowlist cannot be used to impersonate the admin.
+  return BUILT_IN_MAP_ADMIN_TELEGRAM_IDS.includes(userId) || configuredMapAdminIds().includes(userId);
 }
 
 export async function putPresence(room: string, user: TelegramUser, location: {
