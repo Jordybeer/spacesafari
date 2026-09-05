@@ -4,6 +4,7 @@ import { z } from "zod";
 import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
 import { deleteAnchor, isMapAdmin, listAnchors, saveAnchor } from "@/src/lib/map-model";
 import { isNearVenue } from "@/src/lib/venue";
+import { isRedisConfigured } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,6 +31,13 @@ export async function POST(request: Request) {
 
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
+    }
+
+    if (!isRedisConfigured()) {
+      return NextResponse.json(
+        { error: "Kalibratie-opslag is nog niet gekoppeld. Voeg eerst Upstash Redis toe." },
+        { status: 503 },
+      );
     }
 
     if (input.action === "list") {
