@@ -57,15 +57,15 @@ function helpText() {
 function currentBlock(set: FestivalSet): string {
   const stage = STAGES[set.stage];
   const next = nextOnStage(set);
-  const live = set.live ? " · live" : "";
-  const nextLabel = next
-    ? `Volgende: ${formatClock(next.startsAt)} · ${next.artist}${next.live ? " · live" : ""}`
-    : "Volgende: einde";
+  const currentLive = set.live ? " · live" : "";
+  const nextLine = next
+    ? `Daarna: ${next.artist} · ${formatClock(next.startsAt)}${next.live ? " · live" : ""}`
+    : "Daarna: einde";
 
   return [
-    `${stage.emoji} ${set.stage} · ${set.artist}${live}`,
-    `Nu: ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}`,
-    nextLabel,
+    `${stage.emoji} ${set.stage}`,
+    `Nu: ${set.artist} · ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}${currentLive}`,
+    nextLine,
   ].join("\n");
 }
 
