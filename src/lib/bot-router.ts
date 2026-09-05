@@ -20,6 +20,8 @@ import {
 } from "./telegram";
 import { createPing, deletePing, listPings, setById } from "./pings";
 import { performerSets, type FestivalSet } from "@/src/data/timetable";
+import { privateRoomToken } from "./map-model";
+import type { TelegramChat } from "./telegram";
 
 function shortSetKey(id: string): string {
   return crypto.createHash("sha1").update(id).digest("base64url").slice(0, 12);
@@ -190,11 +192,13 @@ async function unpingArtist(chatId: string | number, query: string) {
   await sendMessage(chatId, `🔕 ${matches.length} ping${matches.length === 1 ? "" : "s"} verwijderd.`);
 }
 
-async function sendMap(chatId: string | number, admin = false) {
+async function sendMap(chat: TelegramChat, admin = false) {
   const appUrl = process.env.APP_URL;
   if (!appUrl) throw new Error("APP_URL is not configured");
-  const target = mapMiniAppUrl(admin ? "map_admin" : "map");
-  await sendPhoto(chatId, `${appUrl}/festival-map.jpg`, "🗺️ Festivalterrein", {
+  const isGroup = chat.type === "group" || chat.type === "supergroup";
+  const startParam = admin ? "map_admin" : isGroup ? `room_${privateRoomToken(chat.id)}` : "map";
+  const target = mapMiniAppUrl(startParam);
+  await sendPhoto(chat.id, `${appUrl}/festival-map.jpg`, "🗺️ Festivalterrein", {
     reply_markup: {
       inline_keyboard: [[{ text: admin ? "📍 Kalibreer kaart" : "🗺 Open live kaart", url: target }]],
     },
@@ -249,10 +253,10 @@ export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void>
       await unpingArtist(message.chat.id, args);
       break;
     case "/map":
-      await sendMap(message.chat.id, false);
+      await sendMap(message.chat, false);
       break;
     case "/mapadmin":
-      await sendMap(message.chat.id, true);
+      await sendMap(message.chat, true);
       break;
     default:
       if (command.startsWith("/")) {
