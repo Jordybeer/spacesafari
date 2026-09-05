@@ -7,7 +7,7 @@ type Readiness = {
   webhookActive: boolean;
   webhookPending: number | null;
   redis: boolean;
-  qstash: boolean;
+  reminders: boolean;
   mapAdmin: boolean;
 };
 
@@ -78,10 +78,11 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
     },
     {
       label: "15-minuten pings",
-      ready: readiness.redis && readiness.qstash,
-      missing: readiness.redis ? "Upstash QStash" : "Redis + QStash",
-      href: "https://vercel.com/marketplace/upstash/upstash-qstash",
-      action: "Koppel QStash in Vercel",
+      ready: readiness.reminders,
+      missing: "Redis",
+      detail: readiness.reminders ? "Vercel Queue · durable" : undefined,
+      href: readiness.redis ? undefined : "https://vercel.com/marketplace/upstash/upstash-kv",
+      action: readiness.redis ? undefined : "Koppel Redis in Vercel",
     },
     { label: "GPS-kalibratie admin", ready: readiness.mapAdmin, missing: "Telegram user ID allowlist" },
   ];
@@ -108,9 +109,9 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
             </div>
           ))}
         </div>
-        {(!readiness.redis || !readiness.qstash) && (
+        {!readiness.redis && (
           <p className="microcopy">
-            Kies in Vercel bij de Marketplace-installatie het project <strong>spacesafari</strong>. De integraties zetten hun environment variables automatisch; deze pagina toont de nieuwe status na de redeploy.
+            Kies in Vercel bij de Marketplace-installatie het project <strong>spacesafari</strong>. Redis zet de environment variables automatisch; deze pagina toont de nieuwe status na de redeploy. De pings gebruiken daarna Vercel Queues en hebben geen extra token nodig.
           </p>
         )}
 
