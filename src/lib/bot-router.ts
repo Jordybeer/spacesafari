@@ -59,22 +59,20 @@ function currentBlock(set: FestivalSet): string {
   const next = nextOnStage(set);
   const live = set.live ? " · live" : "";
   const genre = set.genre ?? stage.genre;
-  const country = set.country ? ` · ${set.country}` : "";
-  const flag = set.countryFlag ?? "🌍";
+  const flag = set.countryFlag ? ` ${set.countryFlag}` : "";
+  const nextLabel = next
+    ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}`
+    : "↳ einde";
 
   return [
-    `${stage.emoji} ${set.stage}`,
-    `🎧 ${set.artist}${live} · ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}`,
-    `${flag} ${genre}${country}`,
-    next
-      ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}`
-      : "↳ laatste set op deze stage",
+    `${stage.emoji} ${set.stage} · ${set.artist}${live}`,
+    `   ${formatClock(set.startsAt)}–${formatClock(set.endsAt)} · ${genre}${flag} · ${nextLabel}`,
   ].join("\n");
 }
 
 function compactUpcoming(set: FestivalSet): string {
   const stage = STAGES[set.stage];
-  return `${stage.emoji} ${formatClock(set.startsAt)} · ${set.artist}${set.live ? " · live" : ""}\n   ${set.stage}`;
+  return `${stage.emoji} ${formatClock(set.startsAt)} · ${set.artist}${set.live ? " · live" : ""} · ${set.stage}`;
 }
 
 function formatCurrent(): string {
@@ -84,10 +82,10 @@ function formatCurrent(): string {
     if (festivalHasEnded(now)) return "🌙 Space Safari is afgelopen. Laatste tune: zondag om middernacht.";
     const upcoming = nextUpcomingSets(now);
     if (!upcoming.length) return "Er draait momenteel niets en ik vind geen volgende set.";
-    return ["🎧 Even stilte. Hierna:", "", ...upcoming.map(compactUpcoming)].join("\n");
+    return ["🎧 Even stilte · hierna", ...upcoming.map(compactUpcoming)].join("\n");
   }
 
-  return ["🎧 Nu op Space Safari", "", ...current.map(currentBlock)].join("\n\n");
+  return ["🎧 NU", ...current.map(currentBlock)].join("\n");
 }
 
 async function showProgram(chatId: string | number, query: string) {
@@ -247,7 +245,7 @@ export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void>
       await sendMessage(
         message.chat.id,
         sets.length
-          ? ["⏱ Binnen 60 min", "", ...sets.map(compactUpcoming)].join("\n")
+          ? ["⏱ Binnen 60 min", ...sets.map(compactUpcoming)].join("\n")
           : "⏱ De komende 60 minuten start geen nieuwe set.",
       );
       break;
