@@ -1,8 +1,10 @@
 import { send } from "@vercel/queue";
 
 export const PING_REMINDER_TOPIC = "space-safari-ping-reminders";
-export const MAX_QUEUE_DELAY_SECONDS = 7 * 24 * 60 * 60;
-export const QUEUE_RETENTION_SECONDS = 7 * 24 * 60 * 60;
+// Keep each hop comfortably inside the queue's 24-hour retention window.
+// Longer reminders are re-enqueued by the consumer when a hop wakes up.
+export const MAX_QUEUE_DELAY_SECONDS = 23 * 60 * 60;
+export const QUEUE_RETENTION_SECONDS = 24 * 60 * 60;
 
 export interface PingReminderMessage {
   chatId: string;
