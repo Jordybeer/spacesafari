@@ -5,7 +5,7 @@ import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-async function telegram(method: string, body: Record<string, unknown>) {
+async function telegram(method: string, body: Record<string, unknown> = {}) {
   const token = requireEnv("TELEGRAM_BOT_TOKEN");
   const response = await fetch(`https://api.telegram.org/bot${token}/${method}`, {
     method: "POST",
@@ -19,8 +19,13 @@ async function telegram(method: string, body: Record<string, unknown>) {
 }
 
 export async function POST(request: Request) {
-  const configuredSecret = process.env.WEBHOOK_ADMIN_SECRET;
-  if (!configuredSecret) return NextResponse.json({ error: "Admin endpoint disabled" }, { status: 404 });
+  // Keep WEBHOOK_ADMIN_SECRET as an optional override, but don't force a second
+  // secret during setup. TELEGRAM_WEBHOOK_SECRET is already a strong server-side
+  // secret and is never exposed by this endpoint.
+  const configuredSecret = process.env.WEBHOOK_ADMIN_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!configuredSecret) {
+    return NextResponse.json({ error: "TELEGRAM_WEBHOOK_SECRET is not configured" }, { status: 503 });
+  }
 
   const auth = request.headers.get("authorization") ?? "";
   const supplied = auth.startsWith("Bearer ") ? auth.slice(7) : "";
@@ -39,6 +44,7 @@ export async function POST(request: Request) {
     });
     await telegram("setMyCommands", {
       commands: [
+        { command: "start", description: "Open Space Safari Assistant" },
         { command: "wie", description: "Wie draait er nu?" },
         { command: "straks", description: "Sets die binnen 60 min starten" },
         { command: "programma", description: "Zoek een artiest" },
@@ -46,9 +52,11 @@ export async function POST(request: Request) {
         { command: "pings", description: "Mijn actieve meldingen" },
         { command: "unping", description: "Verwijder een melding" },
         { command: "map", description: "Festivalkaart + live kaart" },
+        { command: "help", description: "Toon alle commando's" },
       ],
     });
-    return NextResponse.json({ ok: true, webhookUrl });
+    const webhookInfo = await telegram("getWebhookInfo");
+    return NextResponse.json({ ok: true, webhookUrl, webhookInfo });
   } catch (error) {
     console.error("Webhook registration failed", error);
     return NextResponse.json({ ok: false, error: "Registration failed" }, { status: 500 });
