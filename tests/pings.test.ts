@@ -55,7 +55,7 @@ describe("artist pings", () => {
     expect(state.published[0]).toMatchObject({
       topic: "space-safari-ping-reminders",
       payload: { chatId: "42", artistSetId: set.id, hop: 0 },
-      options: { retentionSeconds: 604800 },
+      options: { retentionSeconds: 86400 },
     });
     expect(await listPings("42")).toHaveLength(1);
   });
