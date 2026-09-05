@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { isRedisConfigured } from "@/src/lib/storage";
 import SetupClient from "./SetupClient";
 
 export const metadata: Metadata = {
@@ -38,7 +39,7 @@ export default async function SetupPage() {
     telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME && process.env.TELEGRAM_WEBHOOK_SECRET),
     webhookActive: webhook.active,
     webhookPending: webhook.pending,
-    redis: Boolean(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN),
+    redis: isRedisConfigured(),
     qstash: Boolean(process.env.QSTASH_TOKEN && process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY),
     mapAdmin: Boolean(process.env.MAP_ADMIN_TELEGRAM_IDS?.trim()),
   };
