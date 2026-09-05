@@ -1,5 +1,5 @@
-import MapClient from "./MapClient";
+import TelegramReadyMap from "./TelegramReadyMap";
 
 export default function MapPage() {
-  return <MapClient />;
+  return <TelegramReadyMap />;
 }
