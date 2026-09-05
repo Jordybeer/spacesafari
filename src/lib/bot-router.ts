@@ -58,15 +58,13 @@ function currentBlock(set: FestivalSet): string {
   const stage = STAGES[set.stage];
   const next = nextOnStage(set);
   const live = set.live ? " · live" : "";
-  const genre = set.genre ?? stage.genre;
-  const flag = set.countryFlag ? ` ${set.countryFlag}` : "";
   const nextLabel = next
     ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}`
     : "↳ einde";
 
   return [
     `${stage.emoji} ${set.stage} · ${set.artist}${live}`,
-    `   ${formatClock(set.startsAt)}–${formatClock(set.endsAt)} · ${genre}${flag} · ${nextLabel}`,
+    `${formatClock(set.startsAt)}–${formatClock(set.endsAt)}  ${nextLabel}`,
   ].join("\n");
 }
 
@@ -85,7 +83,7 @@ function formatCurrent(): string {
     return ["🎧 Even stilte · hierna", ...upcoming.map(compactUpcoming)].join("\n");
   }
 
-  return ["🎧 NU", ...current.map(currentBlock)].join("\n");
+  return ["🎧 NU", current.map(currentBlock).join("\n\n")].join("\n\n");
 }
 
 async function showProgram(chatId: string | number, query: string) {
