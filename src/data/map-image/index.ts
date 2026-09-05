@@ -6,6 +6,6 @@ import chunk3b from "./chunk3b";
 import chunk4 from "./chunk4";
 
 export const FESTIVAL_MAP_BASE64 = [chunk0, chunk1, chunk2, chunk3a, chunk3b, chunk4].join("");
-export const FESTIVAL_MAP_BYTES = 51045;
+export const FESTIVAL_MAP_BYTES = 51043;
 export const FESTIVAL_MAP_WIDTH = 640;
 export const FESTIVAL_MAP_HEIGHT = 800;
