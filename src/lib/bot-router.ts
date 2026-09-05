@@ -59,12 +59,13 @@ function currentBlock(set: FestivalSet): string {
   const next = nextOnStage(set);
   const live = set.live ? " · live" : "";
   const nextLabel = next
-    ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}`
-    : "↳ einde";
+    ? `Volgende: ${formatClock(next.startsAt)} · ${next.artist}${next.live ? " · live" : ""}`
+    : "Volgende: einde";
 
   return [
     `${stage.emoji} ${set.stage} · ${set.artist}${live}`,
-    `${formatClock(set.startsAt)}–${formatClock(set.endsAt)}  ${nextLabel}`,
+    `Nu: ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}`,
+    nextLabel,
   ].join("\n");
 }
 
@@ -73,8 +74,7 @@ function compactUpcoming(set: FestivalSet): string {
   return `${stage.emoji} ${formatClock(set.startsAt)} · ${set.artist}${set.live ? " · live" : ""} · ${set.stage}`;
 }
 
-function formatCurrent(): string {
-  const now = festivalNow();
+export function formatCurrent(now = festivalNow()): string {
   const current = currentSets(now);
   if (!current.length) {
     if (festivalHasEnded(now)) return "🌙 Space Safari is afgelopen. Laatste tune: zondag om middernacht.";

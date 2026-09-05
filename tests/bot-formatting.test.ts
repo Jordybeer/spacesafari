@@ -1,28 +1,31 @@
 import { describe, expect, it } from "vitest";
 import { DateTime } from "luxon";
-import { currentSets, nextOnStage, formatClock } from "@/src/lib/festival-time";
-import { STAGES } from "@/src/data/stages";
-
-function blockAt(iso: string) {
-  const now = DateTime.fromISO(iso, { setZone: true });
-  return currentSets(now).map((set) => {
-    const stage = STAGES[set.stage];
-    const next = nextOnStage(set);
-    const genre = set.genre ?? stage.genre;
-    const flag = set.countryFlag ? ` ${set.countryFlag}` : "";
-    return [
-      `${stage.emoji} ${set.stage} · ${set.artist}${set.live ? " · live" : ""}`,
-      `   ${formatClock(set.startsAt)}–${formatClock(set.endsAt)} · ${genre}${flag} · ${next ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}` : "↳ einde"}`,
-    ].join("\n");
-  });
-}
+import { formatCurrent } from "@/src/lib/bot-router";
 
 describe("compact now board", () => {
-  it("keeps each current stage to two lines without verbose country labels", () => {
-    const blocks = blockAt("2026-09-05T22:14:00+02:00");
-    expect(blocks).toHaveLength(4);
-    expect(blocks.every((block) => block.split("\n").length === 2)).toBe(true);
-    expect(blocks.join("\n")).not.toContain("Unverified");
-    expect(blocks.join("\n")).toContain("↳");
+  it("makes current and next sets unambiguous at a glance", () => {
+    const now = DateTime.fromISO("2026-09-05T23:43:00+02:00", { setZone: true });
+
+    expect(formatCurrent(now)).toBe(
+      [
+        "🎧 NU",
+        "",
+        "🩷 Supernova · Dju-Yo",
+        "Nu: 22:30–00:00",
+        "Volgende: 00:00 · CYK · live",
+        "",
+        "🟣 Nebula · Collision",
+        "Nu: 22:30–00:00",
+        "Volgende: 00:00 · Sevenum Six",
+        "",
+        "🩵 Zodiac · Aa Sudd & Daniel[i] · live",
+        "Nu: 23:00–01:00",
+        "Volgende: 01:00 · Formant Value · live",
+        "",
+        "🧡 Galaxy · Tweeden Asem",
+        "Nu: 22:00–00:00",
+        "Volgende: 00:30 · Housepainters · live",
+      ].join("\n"),
+    );
   });
 });
