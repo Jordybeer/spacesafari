@@ -1,9 +1,8 @@
-import { Client } from "@upstash/qstash";
 import { DateTime } from "luxon";
 import { performerSets, type FestivalSet } from "@/src/data/timetable";
 import { FESTIVAL_TIMEZONE } from "@/src/data/stages";
+import { enqueuePingReminder } from "./ping-queue";
 import { getRedis } from "./storage";
-import { requireEnv } from "./env";
 
 export interface ArtistPing {
   chatId: string;
@@ -11,7 +10,7 @@ export interface ArtistPing {
   notifyAt: string;
   createdAt: string;
   sentAt?: string;
-  qstashMessageId?: string;
+  queueMessageId?: string;
 }
 
 function pingKey(chatId: string, setId: string) {
@@ -48,15 +47,12 @@ export async function createPing(chatId: string, set: FestivalSet): Promise<{
   await redis.expire(pingIndex(chatId), 7 * 24 * 60 * 60);
 
   try {
-    const client = new Client({ token: requireEnv("QSTASH_TOKEN"), enableTelemetry: false });
-    const delaySeconds = Math.max(0, Math.floor(notify.diff(now, "seconds").seconds));
-    const result = await client.publishJSON({
-      url: `${requireEnv("APP_URL")}/api/notifications/deliver`,
-      body: { chatId, artistSetId: set.id },
-      delay: delaySeconds,
-      retries: 4,
-    });
-    ping.qstashMessageId = result.messageId;
+    ping.queueMessageId = (await enqueuePingReminder({
+      chatId,
+      artistSetId: set.id,
+      createdAt: ping.createdAt,
+      notifyAt: ping.notifyAt,
+    })) ?? undefined;
     await redis.set(pingKey(chatId, set.id), ping, { ex: 7 * 24 * 60 * 60 });
     return { ping, duplicate: false };
   } catch (error) {
