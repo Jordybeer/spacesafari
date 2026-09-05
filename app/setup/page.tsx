@@ -35,12 +35,13 @@ async function getWebhookReadiness(): Promise<{ active: boolean; pending: number
 
 export default async function SetupPage() {
   const webhook = await getWebhookReadiness();
+  const redis = isRedisConfigured();
   const readiness = {
     telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_BOT_USERNAME && process.env.TELEGRAM_WEBHOOK_SECRET),
     webhookActive: webhook.active,
     webhookPending: webhook.pending,
-    redis: isRedisConfigured(),
-    qstash: Boolean(process.env.QSTASH_TOKEN && process.env.QSTASH_CURRENT_SIGNING_KEY && process.env.QSTASH_NEXT_SIGNING_KEY),
+    redis,
+    reminders: redis,
     mapAdmin: Boolean(process.env.MAP_ADMIN_TELEGRAM_IDS?.trim()),
   };
 

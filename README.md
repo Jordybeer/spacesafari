@@ -37,7 +37,7 @@ Artist genre/country metadata is separate. Unknown values remain `Unverified` ra
 
 ## Stack
 
-Next.js 16, React 19, TypeScript, Vercel Functions, Telegram Bot API webhook + Mini App, Luxon, Upstash Redis, Upstash QStash, Zod and Vitest.
+Next.js 16, React 19, TypeScript, Vercel Functions, Telegram Bot API webhook + Mini App, Luxon, Upstash Redis, Vercel Queues, Zod and Vitest.
 
 ## Environment
 
@@ -53,15 +53,14 @@ TELEGRAM_MINI_APP_SHORT_NAME=
 APP_URL=https://your-custom-domain.example
 UPSTASH_REDIS_REST_URL=
 UPSTASH_REDIS_REST_TOKEN=
-QSTASH_TOKEN=
-QSTASH_CURRENT_SIGNING_KEY=
-QSTASH_NEXT_SIGNING_KEY=
 MAP_ROOM_SECRET=
 MAP_ADMIN_TELEGRAM_IDS=
 WEBHOOK_ADMIN_SECRET=
 ```
 
-`APP_URL` must be the final HTTPS origin without a trailing slash because Telegram webhooks and QStash signature verification are URL-sensitive.
+The Vercel Upstash integration can also inject `KV_REST_API_URL` and `KV_REST_API_TOKEN`; the app accepts either naming scheme. `APP_URL` must be the final HTTPS origin without a trailing slash for Telegram webhook registration and Mini App links.
+
+Artist reminders use Vercel Queues directly. They do not require a separate queue token or Marketplace integration on Vercel.
 
 ## Telegram setup
 
@@ -69,20 +68,16 @@ WEBHOOK_ADMIN_SECRET=
 2. Configure a Mini App pointing to `https://<APP_URL>/map`.
 3. Put its short name in `TELEGRAM_MINI_APP_SHORT_NAME` and the bot username in `TELEGRAM_BOT_USERNAME`.
 4. Add the bot to your Telegram group.
-5. Set all Vercel environment variables and deploy.
-6. Register the webhook with the protected endpoint:
+5. Set the required Vercel environment variables and deploy.
+6. Open `/setup` on the deployed app and register/refresh the webhook with `TELEGRAM_WEBHOOK_SECRET`.
 
-```bash
-curl -X POST \
-  -H "Authorization: Bearer $WEBHOOK_ADMIN_SECRET" \
-  https://<APP_URL>/api/telegram/register-webhook
-```
-
-The endpoint registers `POST /api/telegram/webhook`, installs the command menu and uses Telegram's webhook secret-token verification. You can remove `WEBHOOK_ADMIN_SECRET` after setup to disable the endpoint.
+The protected endpoint registers `POST /api/telegram/webhook`, installs the command menu and uses Telegram's webhook secret-token verification. `WEBHOOK_ADMIN_SECRET` is optional; when omitted the setup endpoint falls back to `TELEGRAM_WEBHOOK_SECRET`.
 
 ## Artist reminders
 
-`/ping Sevenum Six` stores an `ArtistPing` in Redis and publishes a delayed QStash message for 15 minutes before the official set start. Delivery validates the QStash signature, checks the ping still exists, uses a Redis lock for idempotency, sends once and marks it sent. It does not use `setTimeout` or serverless process memory.
+`/ping Sevenum Six` stores an `ArtistPing` in Redis and publishes a delayed Vercel Queue message for 15 minutes before the official set start. The queue is registered through `vercel.json` and authenticates automatically on Vercel. The consumer checks that the ping still exists, uses a Redis lock for idempotency, sends once and marks it sent. Deleted or superseded pings become safe no-ops when an old queue message arrives.
+
+Vercel Queues supports delayed durable delivery without `setTimeout` or serverless process memory. The scheduler can hop forward again if a reminder is ever more than the queue's single-message delay window away.
 
 ## Live map and calibration
 
