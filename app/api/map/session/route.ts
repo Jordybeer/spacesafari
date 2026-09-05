@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
-import { isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
+import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
 import { projectPresence } from "@/src/lib/map-projection";
 
 export const runtime = "nodejs";
@@ -32,7 +32,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       room,
       mode: input.mode,
-      groupAvailable: Boolean(data.chatInstance),
+      groupAvailable: hasGroupRoom(data),
       chatType: data.chatType ?? null,
       user: {
         id: data.user.id,
