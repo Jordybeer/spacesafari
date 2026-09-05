@@ -3,6 +3,7 @@ import { z } from "zod";
 import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
 import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
 import { projectPresence } from "@/src/lib/map-projection";
+import { isRedisConfigured } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,7 +18,12 @@ export async function POST(request: Request) {
     const input = RequestSchema.parse(await request.json());
     const data = validateTelegramInitData(input.initData);
     const room = roomFor(data, input.mode);
-    const [anchors, rawPresence] = await Promise.all([listAnchors(), listPresence(room)]);
+    const storageReady = isRedisConfigured();
+
+    const [anchors, rawPresence] = storageReady
+      ? await Promise.all([listAnchors(), listPresence(room)])
+      : [[], []];
+
     const projected = projectPresence(rawPresence, anchors).map((member) => ({
       userId: member.userId,
       displayName: member.displayName,
@@ -32,6 +38,7 @@ export async function POST(request: Request) {
     return NextResponse.json({
       room,
       mode: input.mode,
+      storageReady,
       groupAvailable: hasGroupRoom(data),
       chatType: data.chatType ?? null,
       user: {
