@@ -39,8 +39,20 @@ function shortHash(value: string): string {
   return crypto.createHash("sha256").update(value).digest("base64url").slice(0, 22);
 }
 
+export function privateRoomToken(chatId: string | number): string {
+  const secret = process.env.MAP_ROOM_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secret) throw new Error("MAP_ROOM_SECRET or TELEGRAM_WEBHOOK_SECRET is not configured");
+  return crypto.createHmac("sha256", secret).update(String(chatId)).digest("base64url").slice(0, 22);
+}
+
+export function hasGroupRoom(data: ValidatedMiniAppData): boolean {
+  return Boolean(data.startParam?.match(/^room_[A-Za-z0-9_-]{20,32}$/) || data.chatInstance);
+}
+
 export function roomFor(data: ValidatedMiniAppData, mode: RoomMode): string {
   if (mode === "public") return "public";
+  const directRoom = data.startParam?.match(/^room_([A-Za-z0-9_-]{20,32})$/)?.[1];
+  if (directRoom) return `g_${directRoom}`;
   if (data.chatInstance) return `g_${shortHash(data.chatInstance)}`;
   return `u_${data.user.id}`;
 }
