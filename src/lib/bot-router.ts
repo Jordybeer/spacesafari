@@ -206,9 +206,10 @@ async function sendMap(chat: TelegramChat, admin = false) {
 }
 
 export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void> {
-  if (update.callback_query?.data?.startsWith("p:")) {
-    const callback = update.callback_query;
-    const set = setFromShortKey(callback.data.slice(2));
+  const callback = update.callback_query;
+  const callbackData = callback?.data;
+  if (callback && callbackData?.startsWith("p:")) {
+    const set = setFromShortKey(callbackData.slice(2));
     if (!set || !callback.message) {
       await answerCallbackQuery(callback.id, "Set niet gevonden.");
       return;
