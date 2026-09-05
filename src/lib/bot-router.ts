@@ -20,6 +20,7 @@ import {
 } from "./telegram";
 import { createPing, deletePing, listPings, setById } from "./pings";
 import { performerSets, type FestivalSet } from "@/src/data/timetable";
+import { STAGES } from "@/src/data/stages";
 import { privateRoomToken } from "./map-model";
 import type { TelegramChat } from "./telegram";
 
@@ -53,6 +54,29 @@ function helpText() {
   ].join("\n");
 }
 
+function currentBlock(set: FestivalSet): string {
+  const stage = STAGES[set.stage];
+  const next = nextOnStage(set);
+  const live = set.live ? " · live" : "";
+  const genre = set.genre ?? stage.genre;
+  const country = set.country ? ` · ${set.country}` : "";
+  const flag = set.countryFlag ?? "🌍";
+
+  return [
+    `${stage.emoji} ${set.stage}`,
+    `🎧 ${set.artist}${live} · ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}`,
+    `${flag} ${genre}${country}`,
+    next
+      ? `↳ ${formatClock(next.startsAt)} ${next.artist}${next.live ? " · live" : ""}`
+      : "↳ laatste set op deze stage",
+  ].join("\n");
+}
+
+function compactUpcoming(set: FestivalSet): string {
+  const stage = STAGES[set.stage];
+  return `${stage.emoji} ${formatClock(set.startsAt)} · ${set.artist}${set.live ? " · live" : ""}\n   ${set.stage}`;
+}
+
 function formatCurrent(): string {
   const now = festivalNow();
   const current = currentSets(now);
@@ -60,24 +84,10 @@ function formatCurrent(): string {
     if (festivalHasEnded(now)) return "🌙 Space Safari is afgelopen. Laatste tune: zondag om middernacht.";
     const upcoming = nextUpcomingSets(now);
     if (!upcoming.length) return "Er draait momenteel niets en ik vind geen volgende set.";
-    return [
-      "Er draait momenteel niets.",
-      "",
-      "HIERNA",
-      ...upcoming.map((set) => formatSet(set)),
-    ].join("\n\n");
+    return ["🎧 Even stilte. Hierna:", "", ...upcoming.map(compactUpcoming)].join("\n");
   }
 
-  return current
-    .map((set) => {
-      const next = nextOnStage(set);
-      return [
-        `NU · ${set.stage}`,
-        formatSet(set),
-        ...(next ? ["", `HIERNA · ${set.stage}`, formatSet(next)] : []),
-      ].join("\n");
-    })
-    .join("\n\n");
+  return ["🎧 Nu op Space Safari", "", ...current.map(currentBlock)].join("\n\n");
 }
 
 async function showProgram(chatId: string | number, query: string) {
@@ -237,8 +247,8 @@ export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void>
       await sendMessage(
         message.chat.id,
         sets.length
-          ? ["START BINNEN 60 MIN", "", ...sets.map((set) => formatSet(set))].join("\n\n")
-          : "De komende 60 minuten start geen nieuwe set.",
+          ? ["⏱ Binnen 60 min", "", ...sets.map(compactUpcoming)].join("\n")
+          : "⏱ De komende 60 minuten start geen nieuwe set.",
       );
       break;
     }
