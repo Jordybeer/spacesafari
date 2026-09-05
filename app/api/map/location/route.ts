@@ -3,6 +3,7 @@ import { z } from "zod";
 import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
 import { putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isNearVenue } from "@/src/lib/venue";
+import { isRedisConfigured } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,6 +33,13 @@ export async function POST(request: Request) {
     const input = RequestSchema.parse(await request.json());
     const data = validateTelegramInitData(input.initData);
     const room = roomFor(data, input.mode);
+
+    if (!isRedisConfigured()) {
+      return NextResponse.json(
+        { error: "Live locatie-opslag is nog niet gekoppeld. De festivalkaart zelf werkt wel." },
+        { status: 503 },
+      );
+    }
 
     if (input.action === "stop") {
       await stopPresence(room, data.user.id);
