@@ -52,6 +52,7 @@ export async function POST(request: Request) {
         { command: "pings", description: "Mijn actieve meldingen" },
         { command: "unping", description: "Verwijder een melding" },
         { command: "map", description: "Festivalkaart + live kaart" },
+        { command: "id", description: "Toon mijn Telegram user ID" },
         { command: "help", description: "Toon alle commando's" },
       ],
     });
