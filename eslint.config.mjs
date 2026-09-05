@@ -4,7 +4,7 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 export default defineConfig([
   ...nextVitals,
   {
-    files: ["app/map/MapClient.tsx"],
+    files: ["app/map/MapClientV2.tsx"],
     rules: {
       // The Mini App synchronizes Telegram's external runtime into React state and
       // refreshes presence on timers. These are intentional external-system effects.

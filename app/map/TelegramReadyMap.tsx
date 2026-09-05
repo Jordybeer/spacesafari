@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import MapClient from "./MapClient";
+import MapClientV2 from "./MapClientV2";
 
 type TelegramWindow = Window & {
   Telegram?: {
@@ -12,8 +12,8 @@ type TelegramWindow = Window & {
   };
 };
 
-const MAX_WAIT_MS = 5_000;
-const RETRY_MS = 50;
+const MAX_WAIT_MS = 2_500;
+const RETRY_MS = 40;
 
 export default function TelegramReadyMap() {
   const [mountMap, setMountMap] = useState(false);
@@ -26,9 +26,6 @@ export default function TelegramReadyMap() {
       const webApp = (window as TelegramWindow).Telegram?.WebApp;
       webApp?.ready?.();
 
-      // Mount as soon as Telegram has delivered signed initData. This avoids a
-      // hydration race on iOS where our React effect could run before the
-      // telegram-web-app bridge finished initializing.
       if (webApp?.initData || Date.now() - startedAt >= MAX_WAIT_MS) {
         setMountMap(true);
         return;
@@ -45,15 +42,13 @@ export default function TelegramReadyMap() {
 
   if (!mountMap) {
     return (
-      <main className="landing-shell">
-        <section className="festival-card landing-card">
-          <div className="eyebrow">TELEGRAM MINI APP</div>
-          <div className="wordmark">SPACE<br />SAFARI</div>
-          <p className="lede">Telegram-identiteit laden…</p>
-        </section>
+      <main style={{ minHeight: "100svh", display: "grid", placeItems: "center", padding: 24 }}>
+        <div style={{ color: "rgba(248,232,209,.68)", fontSize: 12, letterSpacing: ".08em" }}>
+          SPACE SAFARI · laden…
+        </div>
       </main>
     );
   }
 
-  return <MapClient />;
+  return <MapClientV2 />;
 }
