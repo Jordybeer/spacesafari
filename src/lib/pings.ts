@@ -70,12 +70,12 @@ export async function createPing(chatId: string, set: FestivalSet): Promise<{
 
 export async function listPings(chatId: string): Promise<ArtistPing[]> {
   const redis = getRedis();
-  const ids = await redis.smembers<string>(pingIndex(chatId));
+  const ids = await redis.smembers<string[]>(pingIndex(chatId));
   if (!ids.length) return [];
-  const values = await Promise.all(ids.map((id) => redis.get<ArtistPing>(pingKey(chatId, id))));
-  const stale = ids.filter((_, index) => !values[index]);
+  const values = await Promise.all(ids.map((id: string) => redis.get<ArtistPing>(pingKey(chatId, id))));
+  const stale = ids.filter((_: string, index: number) => !values[index]);
   if (stale.length) await redis.srem(pingIndex(chatId), ...stale);
-  return values.filter((value): value is ArtistPing => value !== null && !value.sentAt);
+  return values.filter((value: ArtistPing | null): value is ArtistPing => value !== null && !value.sentAt);
 }
 
 export async function deletePing(chatId: string, setId: string): Promise<boolean> {
