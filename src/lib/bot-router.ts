@@ -49,6 +49,7 @@ function helpText() {
     "/pings — mijn ingestelde meldingen",
     "/unping artiest — melding verwijderen",
     "/map — festivalkaart + live groepskaart",
+    "/id — toon je Telegram user ID",
   ].join("\n");
 }
 
@@ -259,6 +260,16 @@ export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void>
     case "/mapadmin":
       await sendMap(message.chat, true);
       break;
+    case "/id": {
+      const userId = message.from?.id;
+      await sendMessage(
+        message.chat.id,
+        userId
+          ? `🪪 Jouw Telegram user ID is:\n${userId}\n\nGebruik dit nummer in MAP_ADMIN_TELEGRAM_IDS om calibration mode voor jezelf vrij te geven.`
+          : "Ik kon je Telegram user ID niet uit dit bericht lezen.",
+      );
+      break;
+    }
     default:
       if (command.startsWith("/")) {
         await sendMessage(message.chat.id, helpText());
