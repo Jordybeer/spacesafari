@@ -105,15 +105,15 @@ export async function stopPresence(room: string, userId: number): Promise<void> 
 
 export async function listPresence(room: string): Promise<MapPresence[]> {
   const redis = getRedis();
-  const members = await redis.smembers<string>(`ss:room:${room}:members`);
+  const members = await redis.smembers<string[]>(`ss:room:${room}:members`);
   if (!members.length) return [];
 
   const values = await Promise.all(
-    members.map((id) => redis.get<MapPresence>(`ss:room:${room}:presence:${id}`)),
+    members.map((id: string) => redis.get<MapPresence>(`ss:room:${room}:presence:${id}`)),
   );
   const stale: string[] = [];
   const current: MapPresence[] = [];
-  values.forEach((value, index) => {
+  values.forEach((value: MapPresence | null, index: number) => {
     if (value) current.push(value);
     else stale.push(members[index]);
   });
