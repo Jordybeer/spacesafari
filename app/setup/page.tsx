@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { isRedisConfigured } from "@/src/lib/storage";
+import { hasMapAdminConfiguration } from "@/src/lib/map-model";
 import SetupClient from "./SetupClient";
 
 export const metadata: Metadata = {
@@ -42,7 +43,7 @@ export default async function SetupPage() {
     webhookPending: webhook.pending,
     redis,
     reminders: redis,
-    mapAdmin: Boolean(process.env.MAP_ADMIN_TELEGRAM_IDS?.trim()),
+    mapAdmin: hasMapAdminConfiguration(),
   };
 
   return <SetupClient readiness={readiness} />;
