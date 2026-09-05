@@ -19,6 +19,10 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="nl">
+      <head>
+        {/* Telegram recommends loading this in <head> before application scripts. */}
+        <script src="https://telegram.org/js/telegram-web-app.js?63" />
+      </head>
       <body>{children}</body>
     </html>
   );
