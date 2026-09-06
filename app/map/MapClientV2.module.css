@@ -15,7 +15,11 @@
   z-index: 1;
 }
 
-.geoShell { display: flex; flex-direction: column; }
+.geoShell {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(118px + var(--tg-safe-bottom, 0px));
+}
 
 .header {
   display: flex;
@@ -185,20 +189,46 @@
 }
 
 .controlDock {
-  position: sticky;
+  position: fixed;
+  left: 50%;
   bottom: calc(6px + var(--tg-safe-bottom, 0px));
-  z-index: 8;
+  transform: translateX(-50%);
+  z-index: 24;
+  width: min(calc(100% - 20px), 740px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 7px;
-  margin-top: 8px;
   padding: 7px;
-  border: 1px solid rgba(248,232,209,.18);
+  border: 1px solid rgba(248,232,209,.2);
   border-radius: 16px;
-  background: rgba(40,18,35,.93);
-  box-shadow: 0 12px 34px rgba(0,0,0,.36);
-  backdrop-filter: blur(16px);
+  background: rgba(40,18,35,.96);
+  box-shadow: 0 14px 38px rgba(0,0,0,.48);
+  backdrop-filter: blur(18px);
+}
+
+.shareDurations {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.shareDurations button {
+  min-height: 28px;
+  border: 1px solid rgba(248,232,209,.14);
+  border-radius: 9px;
+  background: rgba(0,0,0,.16);
+  color: var(--cream-dim);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.shareDurations .activeDuration {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: #211120;
 }
 
 .primaryButton,
