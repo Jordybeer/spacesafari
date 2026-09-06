@@ -1,4 +1,4 @@
-import { fitSimilarity, unprojectWithFit } from "./map-similarity";
+import { fitMapTransform, unprojectWithFit } from "./map-similarity";
 
 export interface GeoAnchor {
   latitude: number;
@@ -14,7 +14,7 @@ export function mapPointToLngLat(
   mapY: number,
   anchors: GeoAnchor[],
 ): LngLatTuple | null {
-  const fit = fitSimilarity(anchors);
+  const fit = fitMapTransform(anchors);
   return fit ? unprojectWithFit(mapX, mapY, fit) : null;
 }
 
