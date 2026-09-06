@@ -3,7 +3,7 @@ import { DateTime } from "luxon";
 import { formatCurrent } from "@/src/lib/bot-router";
 
 describe("compact now board", () => {
-  it("groups each stage into current and next rows", () => {
+  it("renders each stage as a scan-friendly current-to-next tree", () => {
     const now = DateTime.fromISO("2026-09-05T23:43:00+02:00", { setZone: true });
 
     expect(formatCurrent(now)).toBe(
@@ -11,20 +11,20 @@ describe("compact now board", () => {
         "🎧 NU",
         "",
         "🩷 Supernova",
-        "Nu: Dju-Yo · 22:30–00:00",
-        "Daarna: CYK · 00:00 · live",
+        "├ 22:30–00:00  Dju-Yo",
+        "└ 00:00 → CYK · live",
         "",
         "🟣 Nebula",
-        "Nu: Collision · 22:30–00:00",
-        "Daarna: Sevenum Six · 00:00",
+        "├ 22:30–00:00  Collision",
+        "└ 00:00 → Sevenum Six",
         "",
         "🩵 Zodiac",
-        "Nu: Aa Sudd & Daniel[i] · 23:00–01:00 · live",
-        "Daarna: Formant Value · 01:00 · live",
+        "├ 23:00–01:00  Aa Sudd & Daniel[i] · live",
+        "└ 01:00 → Formant Value · live",
         "",
         "🧡 Galaxy",
-        "Nu: Tweeden Asem · 22:00–00:00",
-        "Daarna: Housepainters · 00:30 · live",
+        "├ 22:00–00:00  Tweeden Asem",
+        "└ 00:30 → Housepainters · live",
       ].join("\n"),
     );
   });

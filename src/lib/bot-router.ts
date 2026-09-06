@@ -59,12 +59,12 @@ function currentBlock(set: FestivalSet): string {
   const next = nextOnStage(set);
   const currentLive = set.live ? " · live" : "";
   const nextLine = next
-    ? `Daarna: ${next.artist} · ${formatClock(next.startsAt)}${next.live ? " · live" : ""}`
-    : "Daarna: einde";
+    ? `└ ${formatClock(next.startsAt)} → ${next.artist}${next.live ? " · live" : ""}`
+    : "└ einde";
 
   return [
     `${stage.emoji} ${set.stage}`,
-    `Nu: ${set.artist} · ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}${currentLive}`,
+    `├ ${formatClock(set.startsAt)}–${formatClock(set.endsAt)}  ${set.artist}${currentLive}`,
     nextLine,
   ].join("\n");
 }

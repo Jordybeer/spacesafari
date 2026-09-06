@@ -1,17 +1,17 @@
 🎧 NU
 
 🩷 Supernova
-Nu: Grant Darshan · 21:00–22:30 · live
-Daarna: Dju-Yo · 22:30
+├ 21:00–22:30  Grant Darshan · live
+└ 22:30 → Dju-Yo
 
 🟣 Nebula
-Nu: eMel · 21:00–22:30
-Daarna: Collision · 22:30
+├ 21:00–22:30  eMel
+└ 22:30 → Collision
 
 🩵 Zodiac
-Nu: Felfel · 20:00–23:00
-Daarna: Aa Sudd & Daniel[i] · 23:00 · live
+├ 20:00–23:00  Felfel
+└ 23:00 → Aa Sudd & Daniel[i] · live
 
 🧡 Galaxy
-Nu: Nemanja · 20:30–22:00 · live
-Daarna: Tweeden Asem · 22:00
+├ 20:30–22:00  Nemanja · live
+└ 22:00 → Tweeden Asem
