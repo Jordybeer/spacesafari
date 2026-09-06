@@ -52,6 +52,8 @@ export async function POST(request: Request) {
       anchors: anchors.map((anchor) => ({
         id: anchor.id,
         name: anchor.name,
+        latitude: anchor.latitude,
+        longitude: anchor.longitude,
         mapX: anchor.mapX,
         mapY: anchor.mapY,
         horizontalAccuracy: anchor.horizontalAccuracy,
