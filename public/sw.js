@@ -1,5 +1,5 @@
-const CACHE = "space-safari-static-v1";
-const CORE = ["/map", "/festival-map.jpg"];
+const CACHE = "space-safari-static-v3";
+const CORE = ["/map", "/festival-map.jpg?v=3", "/festival-terrain-overlay.webp?v=1"];
 
 self.addEventListener("install", (event) => {
   event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)).catch(() => undefined));

@@ -14,6 +14,7 @@
     "@upstash/redis": "1.38.3",
     "@vercel/queue": "0.5.1",
     "luxon": "3.7.2",
+    "maplibre-gl": "6.7.0",
     "next": "16.3.3",
     "react": "19.2.8",
     "react-dom": "19.2.8",
