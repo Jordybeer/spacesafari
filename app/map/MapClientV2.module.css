@@ -164,19 +164,47 @@
   border: 2px solid #f8e8d1;
   background: var(--cyan);
   box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 4px rgba(30,185,189,.18);
+  transition: background .18s ease, border-color .18s ease, box-shadow .18s ease, opacity .18s ease;
+}
+.geoMarkerLive {
+  background: #4fb975;
+  border-color: #e9f8ec;
+  box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 5px rgba(79,185,117,.2);
+}
+.geoMarkerStale {
+  background: #4a2c25;
+  border-color: #7d594c;
+  box-shadow: 0 4px 14px rgba(0,0,0,.42), 0 0 0 4px rgba(74,44,37,.22);
+  opacity: .92;
 }
 .geoMarkerMe { border-color: var(--orange); box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 5px rgba(243,107,23,.28); }
+.geoMarkerMe.geoMarkerLive { border-color: #d9f5df; box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 6px rgba(79,185,117,.22); }
+.geoMarkerMe.geoMarkerStale { border-color: #8a6252; box-shadow: 0 4px 14px rgba(0,0,0,.42), 0 0 0 5px rgba(74,44,37,.24); }
 .geoMarkerGps { animation: gpsPulse 1.9s ease-in-out infinite; }
-@keyframes gpsPulse { 50% { box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 10px rgba(243,107,23,.06); } }
+@keyframes gpsPulse { 50% { box-shadow: 0 4px 14px rgba(0,0,0,.46), 0 0 0 10px rgba(79,185,117,.08); } }
 .geoAvatar { width: 100%; height: 100%; overflow: hidden; border-radius: 50%; display: grid; place-items: center; color: #211120; font-size: 9px; font-weight: 1000; }
 .geoAvatar img { width: 100%; height: 100%; object-fit: cover; }
+.geoMarkerStale .geoAvatar { filter: saturate(.55) brightness(.72); color: #f4e2d5; }
+.geoPresenceDot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
+  z-index: 4;
+  width: 11px;
+  height: 11px;
+  border: 2px solid #211120;
+  border-radius: 50%;
+  pointer-events: none;
+}
+.geoPresenceLive { background: #63d98b; box-shadow: 0 0 0 2px rgba(99,217,139,.16), 0 0 10px rgba(99,217,139,.72); }
+.geoPresenceStale { background: #6b4438; box-shadow: none; }
 .geoLabel {
   position: absolute;
   left: 50%;
   top: calc(100% + 4px);
   transform: translateX(-50%);
-  max-width: 120px;
-  padding: 3px 6px;
+  max-width: 190px;
+  padding: 4px 7px;
   border-radius: 999px;
   border: 1px solid rgba(248,232,209,.22);
   background: rgba(31,13,28,.9);
@@ -186,6 +214,17 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  transition: background .18s ease, border-color .18s ease, color .18s ease;
+}
+.geoLabelLive {
+  border-color: rgba(99,217,139,.35);
+  background: rgba(27,65,42,.94);
+  color: #effff3;
+}
+.geoLabelStale {
+  border-color: rgba(180,131,108,.3);
+  background: rgba(60,35,29,.94);
+  color: #e9d4c8;
 }
 
 .controlDock {
