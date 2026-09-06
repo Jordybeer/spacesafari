@@ -3,7 +3,7 @@ import path from "node:path";
 import process from "node:process";
 
 const target = path.join(process.cwd(), "public", "hastiere-offline.webp");
-const url = "https://mapmap.ai/api/static-map?bbox=4.82,50.135,4.90,50.18&size=1280x1280@2x&format=webp&quality=90&lang=local";
+const url = "https://mapmap.ai/api/static-map?bbox=4.82,50.135,4.90,50.18&size=1280x1280@2x&format=webp&quality=94&lang=local&style=dark&pois=1";
 const minimumBytes = 5_000;
 const minimumDimension = 2_000;
 
@@ -103,8 +103,6 @@ async function fetchMap() {
     return;
   }
 
-  // GitHub Actions validates the application without depending on a third-party
-  // renderer. Production on Vercel must contain the actual local map asset.
   if (process.env.VERCEL_ENV === "production") {
     throw lastError instanceof Error ? lastError : new Error("offline basemap download failed");
   }
