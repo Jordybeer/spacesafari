@@ -112,7 +112,10 @@ export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit |
   const m21 = (syy * sxMapY - sxy * syMapY) / det;
   const m22 = (-sxy * sxMapY + sxx * syMapY) / det;
   const matrixDet = m11 * m22 - m12 * m21;
-  if (![m11, m12, m21, m22].every(Number.isFinite) || Math.abs(matrixDet) < 1e-14) return null;
+  if (![m11, m12, m21, m22].every(Number.isFinite) || Math.abs(matrixDet) < 1e-14) {
+    const matrix = similarityFallback(worlds, anchors, worldCenter, mapCenter);
+    return matrix ? { lat0, worldCenter, mapCenter, ...matrix } : null;
+  }
 
   return { lat0, worldCenter, mapCenter, m11, m12, m21, m22 };
 }
