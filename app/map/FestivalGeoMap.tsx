@@ -1,14 +1,33 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ImageSource, Map as MapLibreMap, Marker as MapLibreMarker } from "maplibre-gl";
+import type {
+  ImageSource,
+  Map as MapLibreMap,
+  Marker as MapLibreMarker,
+  StyleSpecification,
+} from "maplibre-gl";
 import { festivalImageCorners, type GeoAnchor } from "@/src/lib/map-georef";
+import { VENUE_CENTER as VENUE } from "@/src/lib/venue";
 import styles from "./MapClientV2.module.css";
+import mapUi from "./FestivalGeoMap.module.css";
 
-const VENUE_CENTER: [number, number] = [4.85465, 50.15575];
+const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
 const BASE_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+const BASE_STYLE_TIMEOUT_MS = 8_000;
 const OVERLAY_SOURCE = "festival-terrain";
 const OVERLAY_LAYER = "festival-terrain-layer";
+const FALLBACK_STYLE: StyleSpecification = {
+  version: 8,
+  sources: {},
+  layers: [
+    {
+      id: "fallback-background",
+      type: "background",
+      paint: { "background-color": "#211120" },
+    },
+  ],
+};
 
 export interface GeoMember {
   userId: number;
@@ -71,6 +90,10 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   return root;
 }
 
+function validPoint(value: { latitude: number; longitude: number } | null | undefined): value is { latitude: number; longitude: number } {
+  return Boolean(value && Number.isFinite(value.latitude) && Number.isFinite(value.longitude));
+}
+
 export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
@@ -80,16 +103,23 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
   const fittedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
+  const [baseMapFallback, setBaseMapFallback] = useState(false);
 
   const corners = useMemo(() => festivalImageCorners(anchors), [anchors]);
+  const ownMember = useMemo(
+    () => members.find((member) => member.userId === ownUserId),
+    [members, ownUserId],
+  );
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
+    let loadTimer: number | undefined;
 
     void import("maplibre-gl").then((maplibre) => {
       if (cancelled || !containerRef.current) return;
       maplibreRef.current = maplibre;
+
       const map = new maplibre.Map({
         container: containerRef.current,
         style: BASE_STYLE,
@@ -104,15 +134,31 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
       });
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), "bottom-right");
       mapRef.current = map;
+
       map.once("load", () => {
+        if (loadTimer !== undefined) window.clearTimeout(loadTimer);
         if (!cancelled) setMapReady(true);
       });
+
+      // Festival reception can be rough. If the remote basemap style cannot finish
+      // loading, keep MapLibre alive with a local background so GPS markers and the
+      // calibrated festival overlay still remain usable.
+      loadTimer = window.setTimeout(() => {
+        if (cancelled || map.loaded()) return;
+        setBaseMapFallback(true);
+        try {
+          map.setStyle(FALLBACK_STYLE);
+        } catch {
+          setMapFailed(true);
+        }
+      }, BASE_STYLE_TIMEOUT_MS);
     }).catch(() => {
       if (!cancelled) setMapFailed(true);
     });
 
     return () => {
       cancelled = true;
+      if (loadTimer !== undefined) window.clearTimeout(loadTimer);
       markersRef.current.forEach((marker) => marker.remove());
       ownFallbackMarkerRef.current?.remove();
       markersRef.current = [];
@@ -163,7 +209,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
     markersRef.current.forEach((marker) => marker.remove());
     markersRef.current = members
-      .filter((member) => Number.isFinite(member.latitude) && Number.isFinite(member.longitude))
+      .filter(validPoint)
       .map((member) => new maplibre.Marker({
         element: createMarkerElement(member, member.userId === ownUserId, showNames),
         anchor: "center",
@@ -207,12 +253,58 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     };
   }, [mapReady, members, ownFix, ownUserId, showNames]);
 
+  const focusSelf = () => {
+    const point = validPoint(ownFix) ? ownFix : validPoint(ownMember) ? ownMember : null;
+    const map = mapRef.current;
+    if (!point || !map) return;
+    map.easeTo({ center: [point.longitude, point.latitude], zoom: Math.max(map.getZoom(), 18), duration: 350 });
+  };
+
+  const fitPeople = () => {
+    const map = mapRef.current;
+    const maplibre = maplibreRef.current;
+    if (!map || !maplibre) return;
+
+    const points: [number, number][] = members
+      .filter(validPoint)
+      .map((member) => [member.longitude, member.latitude]);
+    if (validPoint(ownFix) && !members.some((member) => member.userId === ownUserId)) {
+      points.push([ownFix.longitude, ownFix.latitude]);
+    }
+    if (!points.length) return;
+    if (points.length === 1) {
+      map.easeTo({ center: points[0], zoom: Math.max(map.getZoom(), 18), duration: 350 });
+      return;
+    }
+
+    const bounds = points.slice(1).reduce(
+      (next, point) => next.extend(point),
+      new maplibre.LngLatBounds(points[0], points[0]),
+    );
+    map.fitBounds(bounds, { padding: 52, maxZoom: 18, duration: 350 });
+  };
+
+  const canFocusSelf = validPoint(ownFix) || validPoint(ownMember);
+  const canFitPeople = members.some(validPoint) || validPoint(ownFix);
+
   return (
     <div className={styles.geoMapWrap}>
       <div ref={containerRef} className={styles.geoMap} aria-label="Interactieve Space Safari kaart" />
-      {mapFailed && (
-        <a className={styles.mapFallbackLink} href="/festival-map.jpg?v=3">Kaartlaag kon niet laden · open festivalkaart</a>
+
+      {mapReady && (
+        <div className={mapUi.quickControls} aria-label="Kaartweergave">
+          <button type="button" onClick={focusSelf} disabled={!canFocusSelf} aria-label="Centreer op mij" title="Centreer op mij">⌖</button>
+          <button type="button" onClick={fitPeople} disabled={!canFitPeople} aria-label="Toon iedereen" title="Toon iedereen">👥</button>
+        </div>
       )}
+
+      {baseMapFallback && !mapFailed && (
+        <div className={mapUi.providerNotice}>Kaarttiles offline · live GPS blijft werken</div>
+      )}
+      {mapFailed && (
+        <a className={mapUi.fallbackLink} href="/festival-map.jpg?v=3">Kaartlaag kon niet laden · open festivalkaart</a>
+      )}
+
       <div className={styles.mapLayerBadge}>
         <span className={styles.layerDot} />
         {corners ? "Festival + kaart" : "Live kaart · overlay na 2 ankers"}
