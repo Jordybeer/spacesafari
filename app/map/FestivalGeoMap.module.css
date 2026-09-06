@@ -26,6 +26,14 @@
 .quickControls button:active:not(:disabled) { transform: scale(.96); }
 .quickControls button:disabled { opacity: .34; }
 
+.staticFestivalFallback {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  background: #211120 url('/festival-terrain-overlay.webp?v=2') center / contain no-repeat;
+}
+
 .viewTabs {
   position: absolute;
   z-index: 10;
