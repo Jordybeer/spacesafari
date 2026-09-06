@@ -1,8 +1,7 @@
-const CACHE = "space-safari-static-v8";
+const CACHE = "space-safari-static-v9";
 const TELEGRAM_BRIDGE = "https://telegram.org/js/telegram-web-app.js?63";
 const CORE = [
   "/map",
-  "/hastiere-offline.webp?v=2",
   "/festival-terrain-overlay.webp?v=2",
   "/festival-map.jpg?v=4",
   TELEGRAM_BRIDGE,
