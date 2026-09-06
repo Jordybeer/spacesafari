@@ -1,16 +1,18 @@
-const CACHE = "space-safari-static-v4";
+const CACHE = "space-safari-static-v5";
+const TELEGRAM_BRIDGE = "https://telegram.org/js/telegram-web-app.js?63";
 const CORE = [
   "/map",
   "/hastiere-offline.webp?v=1",
   "/festival-map.jpg?v=3",
   "/festival-terrain-overlay.webp?v=1",
+  TELEGRAM_BRIDGE,
 ];
 
 async function cacheOne(cache, request) {
   try {
     const response = await fetch(request, { cache: "reload" });
-    if (response.ok) await cache.put(request, response.clone());
-    return response.ok ? response : null;
+    if (response.ok || response.type === "opaque") await cache.put(request, response.clone());
+    return response.ok || response.type === "opaque" ? response : null;
   } catch {
     return null;
   }
@@ -51,8 +53,12 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
-  if (url.origin !== self.location.origin) return;
+  if (event.request.method !== "GET") return;
+
+  const isSameOrigin = url.origin === self.location.origin;
+  const isTelegramBridge = event.request.url === TELEGRAM_BRIDGE;
+  if (!isSameOrigin && !isTelegramBridge) return;
+  if (isSameOrigin && url.pathname.startsWith("/api/")) return;
 
   if (event.request.mode === "navigate") {
     event.respondWith((async () => {
@@ -75,7 +81,7 @@ self.addEventListener("fetch", (event) => {
     if (cached) return cached;
     try {
       const response = await fetch(event.request);
-      if (response.ok) {
+      if (response.ok || response.type === "opaque") {
         const clone = response.clone();
         void caches.open(CACHE).then((cache) => cache.put(event.request, clone));
       }
