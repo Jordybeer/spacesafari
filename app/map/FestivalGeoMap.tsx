@@ -8,26 +8,33 @@ import type {
   StyleSpecification,
 } from "maplibre-gl";
 import { festivalImageCorners, type GeoAnchor } from "@/src/lib/map-georef";
-import { VENUE_CENTER as VENUE } from "@/src/lib/venue";
+import { OFFLINE_MAP_BOUNDS, VENUE_CENTER as VENUE } from "@/src/lib/venue";
 import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
 const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const BASE_STYLE = "https://tiles.openfreemap.org/styles/liberty";
-const BASE_STYLE_TIMEOUT_MS = 8_000;
+const OFFLINE_SOURCE = "hastiere-offline";
+const OFFLINE_LAYER = "hastiere-offline-layer";
 const OVERLAY_SOURCE = "festival-terrain";
 const OVERLAY_LAYER = "festival-terrain-layer";
-const FALLBACK_STYLE: StyleSpecification = {
+const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
   layers: [
     {
-      id: "fallback-background",
+      id: "offline-background",
       type: "background",
       paint: { "background-color": "#211120" },
     },
   ],
 };
+
+const OFFLINE_CORNERS: [[number, number], [number, number], [number, number], [number, number]] = [
+  [OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.north],
+  [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.north],
+  [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.south],
+  [OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.south],
+];
 
 export interface GeoMember {
   userId: number;
@@ -103,7 +110,6 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
   const fittedRef = useRef(false);
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
-  const [baseMapFallback, setBaseMapFallback] = useState(false);
 
   const corners = useMemo(() => festivalImageCorners(anchors), [anchors]);
   const ownMember = useMemo(
@@ -114,7 +120,6 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
     let cancelled = false;
-    let loadTimer: number | undefined;
 
     void import("maplibre-gl").then((maplibre) => {
       if (cancelled || !containerRef.current) return;
@@ -122,43 +127,35 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
       const map = new maplibre.Map({
         container: containerRef.current,
-        style: BASE_STYLE,
+        style: LOCAL_STYLE,
         center: VENUE_CENTER,
-        zoom: 15.5,
+        zoom: 15.8,
         minZoom: 13,
         maxZoom: 20,
-        maxBounds: [[4.82, 50.135], [4.90, 50.18]],
+        maxBounds: [
+          [OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.south],
+          [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.north],
+        ],
         dragRotate: false,
         pitchWithRotate: false,
-        attributionControl: { compact: true },
+        attributionControl: false,
       });
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), "bottom-right");
+      map.addControl(new maplibre.AttributionControl({
+        compact: true,
+        customAttribution: "© OpenStreetMap contributors · MapMap",
+      }), "bottom-left");
       mapRef.current = map;
 
       map.once("load", () => {
-        if (loadTimer !== undefined) window.clearTimeout(loadTimer);
         if (!cancelled) setMapReady(true);
       });
-
-      // Festival reception can be rough. If the remote basemap style cannot finish
-      // loading, keep MapLibre alive with a local background so GPS markers and the
-      // calibrated festival overlay still remain usable.
-      loadTimer = window.setTimeout(() => {
-        if (cancelled || map.loaded()) return;
-        setBaseMapFallback(true);
-        try {
-          map.setStyle(FALLBACK_STYLE);
-        } catch {
-          setMapFailed(true);
-        }
-      }, BASE_STYLE_TIMEOUT_MS);
     }).catch(() => {
       if (!cancelled) setMapFailed(true);
     });
 
     return () => {
       cancelled = true;
-      if (loadTimer !== undefined) window.clearTimeout(loadTimer);
       markersRef.current.forEach((marker) => marker.remove());
       ownFallbackMarkerRef.current?.remove();
       markersRef.current = [];
@@ -168,6 +165,25 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
       maplibreRef.current = null;
     };
   }, []);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !mapReady) return;
+
+    if (!map.getSource(OFFLINE_SOURCE)) {
+      map.addSource(OFFLINE_SOURCE, {
+        type: "image",
+        url: "/hastiere-offline.webp?v=1",
+        coordinates: OFFLINE_CORNERS,
+      });
+      map.addLayer({
+        id: OFFLINE_LAYER,
+        type: "raster",
+        source: OFFLINE_SOURCE,
+        paint: { "raster-opacity": 1, "raster-fade-duration": 0 },
+      });
+    }
+  }, [mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -289,7 +305,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
   return (
     <div className={styles.geoMapWrap}>
-      <div ref={containerRef} className={styles.geoMap} aria-label="Interactieve Space Safari kaart" />
+      <div ref={containerRef} className={styles.geoMap} aria-label="Interactieve offline Space Safari kaart" />
 
       {mapReady && (
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
@@ -298,16 +314,13 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
         </div>
       )}
 
-      {baseMapFallback && !mapFailed && (
-        <div className={mapUi.providerNotice}>Kaarttiles offline · live GPS blijft werken</div>
-      )}
       {mapFailed && (
-        <a className={mapUi.fallbackLink} href="/festival-map.jpg?v=3">Kaartlaag kon niet laden · open festivalkaart</a>
+        <a className={mapUi.fallbackLink} href="/festival-map.jpg?v=3">Kaartlaag kon niet starten · open festivalkaart</a>
       )}
 
       <div className={styles.mapLayerBadge}>
         <span className={styles.layerDot} />
-        {corners ? "Festival + kaart" : "Live kaart · overlay na 2 ankers"}
+        {corners ? "Offline + festival" : "Offline Hastière · overlay na 2 ankers"}
       </div>
     </div>
   );
