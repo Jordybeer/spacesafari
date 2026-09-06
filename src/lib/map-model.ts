@@ -4,6 +4,7 @@ import type { TelegramUser } from "./telegram";
 import type { ValidatedMiniAppData } from "./telegram-init-data";
 
 export const PRESENCE_TTL_SECONDS = 15 * 60;
+export const MAX_PRESENCE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const BUILT_IN_MAP_ADMIN_TELEGRAM_IDS: readonly number[] = [1303637520];
 
 export interface MapAnchor {
@@ -74,8 +75,6 @@ export function hasMapAdminConfiguration(): boolean {
 }
 
 export function isMapAdmin(userId: number): boolean {
-  // Telegram initData is signature-verified server-side before this check, so a
-  // numeric ID in this allowlist cannot be used to impersonate the admin.
   return BUILT_IN_MAP_ADMIN_TELEGRAM_IDS.includes(userId) || configuredMapAdminIds().includes(userId);
 }
 
@@ -83,8 +82,9 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   latitude: number;
   longitude: number;
   horizontalAccuracy?: number | null;
-}): Promise<MapPresence> {
+}, ttlSeconds = PRESENCE_TTL_SECONDS): Promise<MapPresence> {
   const redis = getRedis();
+  const ttl = Math.max(60, Math.min(MAX_PRESENCE_TTL_SECONDS, Math.round(ttlSeconds)));
   const presence: MapPresence = {
     userId: user.id,
     displayName: displayName(user),
@@ -98,9 +98,9 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   const userKey = `ss:room:${room}:presence:${user.id}`;
   const membersKey = `ss:room:${room}:members`;
   await Promise.all([
-    redis.set(userKey, presence, { ex: PRESENCE_TTL_SECONDS }),
+    redis.set(userKey, presence, { ex: ttl }),
     redis.sadd(membersKey, String(user.id)),
-    redis.expire(membersKey, PRESENCE_TTL_SECONDS * 2),
+    redis.expire(membersKey, Math.max(PRESENCE_TTL_SECONDS * 2, ttl * 2)),
   ]);
   return presence;
 }

@@ -15,7 +15,11 @@
   z-index: 1;
 }
 
-.geoShell { display: flex; flex-direction: column; }
+.geoShell {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: calc(118px + var(--tg-safe-bottom, 0px));
+}
 
 .header {
   display: flex;
@@ -185,20 +189,46 @@
 }
 
 .controlDock {
-  position: sticky;
+  position: fixed;
+  left: 50%;
   bottom: calc(6px + var(--tg-safe-bottom, 0px));
-  z-index: 8;
+  transform: translateX(-50%);
+  z-index: 24;
+  width: min(calc(100% - 20px), 740px);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 7px;
-  margin-top: 8px;
   padding: 7px;
-  border: 1px solid rgba(248,232,209,.18);
+  border: 1px solid rgba(248,232,209,.2);
   border-radius: 16px;
-  background: rgba(40,18,35,.93);
-  box-shadow: 0 12px 34px rgba(0,0,0,.36);
-  backdrop-filter: blur(16px);
+  background: rgba(40,18,35,.96);
+  box-shadow: 0 14px 38px rgba(0,0,0,.48);
+  backdrop-filter: blur(18px);
+}
+
+.shareDurations {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+}
+
+.shareDurations button {
+  min-height: 28px;
+  border: 1px solid rgba(248,232,209,.14);
+  border-radius: 9px;
+  background: rgba(0,0,0,.16);
+  color: var(--cream-dim);
+  font: inherit;
+  font-size: 9px;
+  font-weight: 900;
+}
+
+.shareDurations .activeDuration {
+  background: var(--cyan);
+  border-color: var(--cyan);
+  color: #211120;
 }
 
 .primaryButton,
@@ -235,8 +265,25 @@
 .adminBody p, .calibrationHint { margin: 0; color: var(--cream-dim); font-size: 10px; line-height: 1.4; }
 .textInput { width: 100%; min-height: 40px; padding: 0 10px; border: 1px solid var(--line); border-radius: 10px; outline: none; background: rgba(0,0,0,.16); color: var(--cream); font: inherit; }
 .textInput:focus { border-color: var(--cyan); }
-.calibrationImage { position: relative; width: min(100%, 430px); margin: 0 auto; overflow: hidden; border-radius: 13px; border: 1px solid var(--line); background: #251225; }
-.calibrationImage > img { display: block; width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+.calibrationImage {
+  position: relative;
+  width: min(100%, 430px);
+  aspect-ratio: 4 / 5;
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 13px;
+  border: 1px solid var(--line);
+  background: #251225 url('/festival-terrain-overlay.webp?v=1') center / contain no-repeat;
+}
+.calibrationImage > img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  opacity: 0;
+  user-select: none;
+  -webkit-user-drag: none;
+}
 .calibrating { cursor: crosshair; }
 .anchorMarker { position: absolute; width: 9px; height: 9px; transform: translate(-50%,-50%); border-radius: 50%; border: 2px solid var(--cream); background: var(--pink); z-index: 3; }
 .calibrationTarget { position: absolute; width: 28px; height: 28px; transform: translate(-50%,-50%); border: 2px solid var(--orange); border-radius: 50%; box-shadow: 0 0 0 6px rgba(243,107,23,.2); pointer-events: none; z-index: 6; }

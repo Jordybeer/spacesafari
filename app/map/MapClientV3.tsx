@@ -6,6 +6,7 @@ import type { GeoAnchor } from "@/src/lib/map-georef";
 import styles from "./MapClientV2.module.css";
 
 type RoomMode = "group" | "public";
+type ShareDuration = 900 | 1800 | 3600 | 7200 | 604800;
 
 type LocationFix = {
   latitude: number;
@@ -75,6 +76,14 @@ declare global {
 const SESSION_CACHE = "space-safari-map-session-v3";
 const LIVE_INTERVAL_MS = 25_000;
 const POLL_INTERVAL_MS = 15_000;
+const CONSTANT_TTL_SECONDS: ShareDuration = 604800;
+const SHARE_DURATIONS: { label: string; seconds: ShareDuration }[] = [
+  { label: "15m", seconds: 900 },
+  { label: "30m", seconds: 1800 },
+  { label: "1u", seconds: 3600 },
+  { label: "2u", seconds: 7200 },
+  { label: "∞", seconds: CONSTANT_TTL_SECONDS },
+];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
@@ -129,6 +138,8 @@ export default function MapClientV3() {
   const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [liveSharing, setLiveSharing] = useState(false);
+  const [shareDuration, setShareDuration] = useState<ShareDuration>(1800);
+  const [shareUntil, setShareUntil] = useState<number | null>(null);
   const [showNames, setShowNames] = useState(true);
   const [lastOwnFix, setLastOwnFix] = useState<LocationFix | null>(null);
   const [calibrationFix, setCalibrationFix] = useState<LocationFix | null>(null);
@@ -191,46 +202,19 @@ export default function MapClientV3() {
     return () => window.clearInterval(timer);
   }, [initData, mode, refresh]);
 
-  const updateOwnLocation = useCallback(async () => {
+  const updateOwnLocation = useCallback(async (ttlSeconds: number) => {
     const location = await telegramLocation();
     setLastOwnFix(location);
-    await postJson("/api/map/location", { action: "update", initData, mode, location });
+    await postJson("/api/map/location", { action: "update", initData, mode, location, ttlSeconds });
     setSharing(true);
     setOnline(true);
     await refresh(true);
     return location;
   }, [initData, mode, refresh]);
 
-  useEffect(() => {
-    if (!liveSharing || !initData) return;
-    let cancelled = false;
-    const update = async () => {
-      try {
-        if (!cancelled) await updateOwnLocation();
-      } catch (cause) {
-        if (!cancelled) setError(cause instanceof Error ? cause.message : "Live locatie bijwerken mislukte.");
-      }
-    };
-    void update();
-    const timer = window.setInterval(() => void update(), LIVE_INTERVAL_MS);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [initData, liveSharing, updateOwnLocation]);
-
-  const shareOnce = async () => {
-    setError(null);
-    try {
-      await updateOwnLocation();
-      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Locatie delen mislukte.");
-    }
-  };
-
-  const stopSharing = async () => {
+  const stopSharing = useCallback(async () => {
     setLiveSharing(false);
+    setShareUntil(null);
     if (!initData) return;
     try {
       await postJson("/api/map/location", { action: "stop", initData, mode });
@@ -239,6 +223,65 @@ export default function MapClientV3() {
       await refresh(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Stoppen met delen mislukte.");
+    }
+  }, [initData, mode, refresh]);
+
+  useEffect(() => {
+    if (!liveSharing || !initData) return;
+    let cancelled = false;
+
+    const update = async () => {
+      if (cancelled) return;
+      if (shareUntil && Date.now() >= shareUntil) {
+        await stopSharing();
+        return;
+      }
+      const ttl = shareUntil
+        ? Math.max(60, Math.ceil((shareUntil - Date.now()) / 1000))
+        : CONSTANT_TTL_SECONDS;
+      try {
+        await updateOwnLocation(ttl);
+      } catch (cause) {
+        if (!cancelled) setError(cause instanceof Error ? cause.message : "Live locatie bijwerken mislukte.");
+      }
+    };
+
+    void update();
+    const timer = window.setInterval(() => void update(), LIVE_INTERVAL_MS);
+    const expiryTimer = shareUntil
+      ? window.setTimeout(() => void stopSharing(), Math.max(0, shareUntil - Date.now()))
+      : null;
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      if (expiryTimer !== null) window.clearTimeout(expiryTimer);
+    };
+  }, [initData, liveSharing, shareUntil, stopSharing, updateOwnLocation]);
+
+  const shareOnce = async () => {
+    setError(null);
+    try {
+      await updateOwnLocation(shareDuration);
+      window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Locatie delen mislukte.");
+    }
+  };
+
+  const toggleLiveSharing = (enabled: boolean) => {
+    if (!enabled) {
+      void stopSharing();
+      return;
+    }
+    setShareUntil(shareDuration === CONSTANT_TTL_SECONDS ? null : Date.now() + shareDuration * 1000);
+    setLiveSharing(true);
+  };
+
+  const chooseDuration = (seconds: ShareDuration) => {
+    setShareDuration(seconds);
+    if (liveSharing) {
+      setShareUntil(seconds === CONSTANT_TTL_SECONDS ? null : Date.now() + seconds * 1000);
     }
   };
 
@@ -301,12 +344,10 @@ export default function MapClientV3() {
     await refresh(true);
   };
 
-  const freshMembers = useMemo(
-    () => (session?.members ?? []).filter((member) => Date.now() - new Date(member.updatedAt).getTime() <= 15 * 60 * 1000),
-    [session],
-  );
+  const freshMembers = useMemo(() => session?.members ?? [], [session]);
   const calibrated = (session?.anchorCount ?? 0) >= 2;
   const me = freshMembers.find((member) => member.userId === session?.user.id);
+  const selectedDurationLabel = SHARE_DURATIONS.find((item) => item.seconds === shareDuration)?.label ?? "30m";
 
   if (!initData) {
     return (
@@ -315,7 +356,7 @@ export default function MapClientV3() {
           <div className={styles.kicker}>SPACE SAFARI</div>
           <h1>Festivalkaart</h1>
           <p>Open deze kaart vanuit de Telegram-bot voor live groepslocaties.</p>
-          <a href="/festival-map.jpg?v=3" className={styles.primaryButton}>Open statische kaart</a>
+          <a href="/festival-terrain-overlay.webp?v=1" className={styles.primaryButton}>Open statische kaart</a>
         </section>
       </main>
     );
@@ -363,14 +404,27 @@ export default function MapClientV3() {
 
       {!session?.storageReady && session && <div className={styles.infoBanner}>Live opslag ontbreekt. De kaart zelf blijft bruikbaar.</div>}
 
-      <section className={styles.controlDock}>
+      <section className={styles.controlDock} aria-label="Locatie delen">
+        <div className={styles.shareDurations} aria-label="Duur locatie delen">
+          {SHARE_DURATIONS.map((item) => (
+            <button
+              type="button"
+              key={item.seconds}
+              className={shareDuration === item.seconds ? styles.activeDuration : ""}
+              onClick={() => chooseDuration(item.seconds)}
+              aria-pressed={shareDuration === item.seconds}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
         <button className={styles.primaryButton} disabled={loading || session?.storageReady === false} onClick={() => void shareOnce()}>
           📍 {sharing || me ? "Bijwerken" : "Deel locatie"}
         </button>
         <label className={styles.liveCompact}>
-          <span><strong>Live</strong><small>25s</small></span>
+          <span><strong>Live</strong><small>{selectedDurationLabel}</small></span>
           <span className={styles.switch}>
-            <input type="checkbox" checked={liveSharing} disabled={session?.storageReady === false} onChange={(event) => setLiveSharing(event.target.checked)} />
+            <input type="checkbox" checked={liveSharing} disabled={session?.storageReady === false} onChange={(event) => toggleLiveSharing(event.target.checked)} />
             <span />
           </span>
         </label>
@@ -381,7 +435,7 @@ export default function MapClientV3() {
         <details className={styles.adminCard}>
           <summary>📍 Kalibratie · {session.anchorCount} ankers</summary>
           <div className={styles.adminBody}>
-            <p>Loop naar een herkenbaar punt, neem je GPS op en tik daarna dezelfde plek op de festivalkaart. Vanaf twee ankers legt MapLibre de festivalkaart geografisch over OpenStreetMap.</p>
+            <p>Loop naar een herkenbaar punt, neem je GPS op en tik daarna dezelfde plek op de festivalkaart.</p>
             <input className={styles.textInput} list="anchor-suggestions-v3" value={anchorName} onChange={(event) => setAnchorName(event.target.value)} placeholder="Naam, bv. Galaxy" />
             <datalist id="anchor-suggestions-v3">
               <option value="Entrance" /><option value="Galaxy" /><option value="Nebula" /><option value="Zodiac" /><option value="Supernova" /><option value="Camping 1" /><option value="Camping 2" /><option value="Parking" />
@@ -389,7 +443,7 @@ export default function MapClientV3() {
             <button className={styles.secondaryButton} onClick={() => void beginCalibration()}>1 · Neem huidige GPS</button>
             {calibrationFix && <div className={styles.calibrationHint}>GPS vast{calibrationFix.horizontalAccuracy ? ` op ±${Math.round(calibrationFix.horizontalAccuracy)} m` : ""}. Tik nu exact dezelfde plek hieronder.</div>}
             <div ref={calibrationRef} className={`${styles.calibrationImage} ${calibrationFix ? styles.calibrating : ""}`} onClick={handleCalibrationTap}>
-              <img src="/festival-map.jpg?v=3" alt="Space Safari festivalkaart voor kalibratie" draggable={false} />
+              <img src="/festival-map.jpg?v=3" alt="" draggable={false} />
               {session.anchors.map((anchor) => <span key={anchor.id} className={styles.anchorMarker} style={{ left: `${anchor.mapX * 100}%`, top: `${anchor.mapY * 100}%` }} />)}
               {calibrationPoint && <span className={styles.calibrationTarget} style={{ left: `${calibrationPoint.x * 100}%`, top: `${calibrationPoint.y * 100}%` }} />}
             </div>
