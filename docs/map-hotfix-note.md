@@ -1,1 +1,0 @@
-Post-merge hotfix: restores a visible festival/calibration map even when Telegram holds a stale broken JPEG, and keeps location controls pinned to the Mini App viewport with selectable sharing lifetimes.
