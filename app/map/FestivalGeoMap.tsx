@@ -111,7 +111,7 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   if (showNames) {
     const label = document.createElement("span");
     label.className = `${styles.geoLabel} ${live ? styles.geoLabelLive : styles.geoLabelStale}`;
-    label.textContent = `${name} · ${statusText}`;
+    label.textContent = name;
     root.appendChild(label);
   }
   return root;
@@ -272,7 +272,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     if (showNames) {
       const label = document.createElement("span");
       label.className = `${styles.geoLabel} ${styles.geoLabelLive}`;
-      label.textContent = "Jij · live";
+      label.textContent = "Jij";
       root.appendChild(label);
     }
     ownFallbackMarkerRef.current = new maplibre.Marker({ element: root, anchor: "center" })
