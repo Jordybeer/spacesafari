@@ -102,7 +102,12 @@ export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit |
   }
 
   const det = sxx * syy - sxy * sxy;
-  if (Math.abs(det) < 1) {
+  const spread = sxx + syy;
+  const conditioning = spread > 0 ? det / (spread * spread) : 0;
+  // Festival anchors are often recorded along the same footpath. An affine fit
+  // on nearly-collinear GPS points extrapolates the image corners wildly, so
+  // use the stable rotate/scale fit until anchors genuinely span two dimensions.
+  if (spread < 0.25 || det < 1 || conditioning < 0.005) {
     const matrix = similarityFallback(worlds, anchors, worldCenter, mapCenter);
     return matrix ? { lat0, worldCenter, mapCenter, ...matrix } : null;
   }
@@ -121,7 +126,8 @@ export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit |
 }
 
 // Backwards-compatible name for the map UI while the implementation now uses
-// an affine fit for 3+ anchors and a similarity fit only for the 2-anchor case.
+// an affine fit for well-spread 3+ anchors and a similarity fit for sparse or
+// nearly-collinear calibration points.
 export const fitSimilarity = fitMapTransform;
 
 export function projectWithFit(latitude: number, longitude: number, fit: MapTransformFit): { mapX: number; mapY: number } {
