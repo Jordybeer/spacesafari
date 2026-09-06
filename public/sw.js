@@ -1,8 +1,46 @@
-const CACHE = "space-safari-static-v3";
-const CORE = ["/map", "/festival-map.jpg?v=3", "/festival-terrain-overlay.webp?v=1"];
+const CACHE = "space-safari-static-v5";
+const TELEGRAM_BRIDGE = "https://telegram.org/js/telegram-web-app.js?63";
+const CORE = [
+  "/map",
+  "/hastiere-offline.webp?v=1",
+  "/festival-map.jpg?v=3",
+  "/festival-terrain-overlay.webp?v=1",
+  TELEGRAM_BRIDGE,
+];
+
+async function cacheOne(cache, request) {
+  try {
+    const response = await fetch(request, { cache: "reload" });
+    if (response.ok || response.type === "opaque") await cache.put(request, response.clone());
+    return response.ok || response.type === "opaque" ? response : null;
+  } catch {
+    return null;
+  }
+}
+
+async function precacheMapShell(cache) {
+  const response = await cacheOne(cache, "/map");
+  if (!response) return;
+
+  try {
+    const html = await response.clone().text();
+    const assetUrls = new Set(
+      [...html.matchAll(/(?:src|href)="([^"#?]+(?:\?[^"#]*)?)"/g)]
+        .map((match) => match[1])
+        .filter((value) => value.startsWith("/_next/static/") || value.startsWith("/festival-")),
+    );
+    await Promise.all([...assetUrls].map((url) => cacheOne(cache, url)));
+  } catch {
+    // The explicitly listed core files still make the map useful offline.
+  }
+}
 
 self.addEventListener("install", (event) => {
-  event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(CORE)).catch(() => undefined));
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    await Promise.all(CORE.filter((url) => url !== "/map").map((url) => cacheOne(cache, url)));
+    await precacheMapShell(cache);
+  })());
   self.skipWaiting();
 });
 
@@ -15,14 +53,41 @@ self.addEventListener("activate", (event) => {
 
 self.addEventListener("fetch", (event) => {
   const url = new URL(event.request.url);
-  if (event.request.method !== "GET" || url.pathname.startsWith("/api/")) return;
-  event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request).then((response) => {
-      if (response.ok && url.origin === self.location.origin) {
+  if (event.request.method !== "GET") return;
+
+  const isSameOrigin = url.origin === self.location.origin;
+  const isTelegramBridge = event.request.url === TELEGRAM_BRIDGE;
+  if (!isSameOrigin && !isTelegramBridge) return;
+  if (isSameOrigin && url.pathname.startsWith("/api/")) return;
+
+  if (event.request.mode === "navigate") {
+    event.respondWith((async () => {
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) {
+          const clone = response.clone();
+          void caches.open(CACHE).then((cache) => cache.put(event.request, clone));
+        }
+        return response;
+      } catch {
+        return (await caches.match(event.request)) || (await caches.match("/map")) || Response.error();
+      }
+    })());
+    return;
+  }
+
+  event.respondWith((async () => {
+    const cached = await caches.match(event.request);
+    if (cached) return cached;
+    try {
+      const response = await fetch(event.request);
+      if (response.ok || response.type === "opaque") {
         const clone = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, clone));
+        void caches.open(CACHE).then((cache) => cache.put(event.request, clone));
       }
       return response;
-    })),
-  );
+    } catch {
+      return Response.error();
+    }
+  })());
 });

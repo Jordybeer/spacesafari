@@ -4,6 +4,15 @@
 export const VENUE_CENTER = { latitude: 50.15654, longitude: 4.85366 } as const;
 export const VENUE_MAX_DISTANCE_METERS = 3_000;
 
+// Local offline basemap extent. This covers Massembre plus the useful Hastière
+// surroundings while keeping enough pixel density for walking-scale navigation.
+export const OFFLINE_MAP_BOUNDS = {
+  west: 4.82,
+  south: 50.135,
+  east: 4.90,
+  north: 50.18,
+} as const;
+
 export function distanceMeters(
   a: { latitude: number; longitude: number },
   b: { latitude: number; longitude: number },
