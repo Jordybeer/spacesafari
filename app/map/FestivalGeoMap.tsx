@@ -2,28 +2,20 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { ImageSource, Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
-import { festivalImageCorners, type GeoAnchor } from "@/src/lib/map-georef";
-import { OFFLINE_MAP_BOUNDS, VENUE_CENTER as VENUE } from "@/src/lib/venue";
+import { festivalImageCorners, type GeoAnchor, type LngLatTuple } from "@/src/lib/map-georef";
+import { VENUE_CENTER as VENUE } from "@/src/lib/venue";
 import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
 const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const OFFLINE_SOURCE = "hastiere-offline";
-const OFFLINE_LAYER = "hastiere-offline-layer";
 const FESTIVAL_SOURCE = "festival-overlay";
 const FESTIVAL_LAYER = "festival-overlay-layer";
+const FESTIVAL_IMAGE_URL = "/festival-terrain-overlay.webp?v=2";
 const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
-  layers: [{ id: "offline-background", type: "background", paint: { "background-color": "#211120" } }],
+  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "#211120" } }],
 };
-
-const OFFLINE_CORNERS: [[number, number], [number, number], [number, number], [number, number]] = [
-  [OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.north],
-  [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.north],
-  [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.south],
-  [OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.south],
-];
 
 export interface GeoMember {
   userId: number;
@@ -90,17 +82,24 @@ function validPoint(value: { latitude: number; longitude: number } | null | unde
   return Boolean(value && Number.isFinite(value.latitude) && Number.isFinite(value.longitude));
 }
 
+function boundsForCorners(maplibre: typeof import("maplibre-gl"), corners: readonly LngLatTuple[]) {
+  const bounds = new maplibre.LngLatBounds(corners[0], corners[0]);
+  corners.slice(1).forEach((corner) => bounds.extend(corner));
+  return bounds;
+}
+
 export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const maplibreRef = useRef<typeof import("maplibre-gl") | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
   const ownFallbackMarkerRef = useRef<MapLibreMarker | null>(null);
+  const lastAutoFitKeyRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
 
-  const calibrated = anchors.length >= 2;
   const corners = useMemo(() => festivalImageCorners(anchors), [anchors]);
+  const cornerKey = corners ? corners.flat().map((value) => value.toFixed(8)).join(",") : "";
   const ownMember = useMemo(() => members.find((member) => member.userId === ownUserId), [members, ownUserId]);
 
   useEffect(() => {
@@ -118,13 +117,11 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
         zoom: 15.8,
         minZoom: 13,
         maxZoom: 20,
-        maxBounds: [[OFFLINE_MAP_BOUNDS.west, OFFLINE_MAP_BOUNDS.south], [OFFLINE_MAP_BOUNDS.east, OFFLINE_MAP_BOUNDS.north]],
         dragRotate: false,
         pitchWithRotate: false,
         attributionControl: false,
       });
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), "bottom-right");
-      map.addControl(new maplibre.AttributionControl({ compact: true, customAttribution: "© OpenStreetMap contributors · MapMap" }), "bottom-left");
       mapRef.current = map;
       map.once("load", () => { if (!cancelled) setMapReady(true); });
     }).catch(() => { if (!cancelled) setMapFailed(true); });
@@ -143,42 +140,45 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
   useEffect(() => {
     const map = mapRef.current;
-    if (!map || !mapReady || map.getSource(OFFLINE_SOURCE)) return;
-    map.addSource(OFFLINE_SOURCE, { type: "image", url: "/hastiere-offline.webp?v=2", coordinates: OFFLINE_CORNERS });
-    map.addLayer({ id: OFFLINE_LAYER, type: "raster", source: OFFLINE_SOURCE, paint: { "raster-opacity": 1, "raster-fade-duration": 0 } });
-  }, [mapReady]);
-
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map || !mapReady) return;
+    const maplibre = maplibreRef.current;
+    if (!map || !maplibre || !mapReady) return;
 
     if (!corners) {
       if (map.getLayer(FESTIVAL_LAYER)) map.removeLayer(FESTIVAL_LAYER);
       if (map.getSource(FESTIVAL_SOURCE)) map.removeSource(FESTIVAL_SOURCE);
+      lastAutoFitKeyRef.current = "";
       return;
     }
 
     const existing = map.getSource(FESTIVAL_SOURCE) as ImageSource | undefined;
     if (existing) {
       existing.setCoordinates(corners);
-      return;
+    } else {
+      map.addSource(FESTIVAL_SOURCE, {
+        type: "image",
+        url: FESTIVAL_IMAGE_URL,
+        coordinates: corners,
+      });
+      map.addLayer({
+        id: FESTIVAL_LAYER,
+        type: "raster",
+        source: FESTIVAL_SOURCE,
+        paint: {
+          "raster-opacity": 1,
+          "raster-fade-duration": 0,
+        },
+      });
     }
 
-    map.addSource(FESTIVAL_SOURCE, {
-      type: "image",
-      url: "/festival-terrain-overlay.webp?v=2",
-      coordinates: corners,
-    });
-    map.addLayer({
-      id: FESTIVAL_LAYER,
-      type: "raster",
-      source: FESTIVAL_SOURCE,
-      paint: {
-        "raster-opacity": 0.96,
-        "raster-fade-duration": 0,
-      },
-    });
-  }, [corners, mapReady]);
+    if (cornerKey && cornerKey !== lastAutoFitKeyRef.current) {
+      map.fitBounds(boundsForCorners(maplibre, corners), {
+        padding: { top: 24, right: 24, bottom: 42, left: 24 },
+        maxZoom: 18,
+        duration: 0,
+      });
+      lastAutoFitKeyRef.current = cornerKey;
+    }
+  }, [cornerKey, corners, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -231,6 +231,17 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     };
   }, [mapReady, members, ownFix, ownUserId, showNames]);
 
+  const fitFestival = () => {
+    const map = mapRef.current;
+    const maplibre = maplibreRef.current;
+    if (!map || !maplibre || !corners) return;
+    map.fitBounds(boundsForCorners(maplibre, corners), {
+      padding: { top: 24, right: 24, bottom: 42, left: 24 },
+      maxZoom: 18,
+      duration: 350,
+    });
+  };
+
   const focusSelf = () => {
     const point = validPoint(ownFix) ? ownFix : validPoint(ownMember) ? ownMember : null;
     const map = mapRef.current;
@@ -258,22 +269,25 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
   return (
     <div className={styles.geoMapWrap}>
-      <div ref={containerRef} className={styles.geoMap} aria-label="Interactieve Space Safari kaart" />
+      <div ref={containerRef} className={styles.geoMap} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
+
+      {!corners && <div className={mapUi.staticFestivalFallback} aria-hidden="true" />}
 
       {mapReady && (
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
+          <button type="button" onClick={fitFestival} disabled={!corners} aria-label="Toon volledige festivalkaart" title="Toon volledige festivalkaart">🗺️</button>
           <button type="button" onClick={focusSelf} disabled={!canFocusSelf} aria-label="Centreer op mij" title="Centreer op mij">⌖</button>
           <button type="button" onClick={fitPeople} disabled={!canFitPeople} aria-label="Toon iedereen" title="Toon iedereen">👥</button>
         </div>
       )}
 
       {mapFailed && (
-        <div className={mapUi.fallbackLink}>{calibrated ? "Kaart kon niet starten. Festivaloverlay is wel gekalibreerd." : "Kaart kon niet starten."}</div>
+        <div className={mapUi.fallbackLink}>De live kaart kon niet starten.</div>
       )}
 
       <div className={styles.mapLayerBadge}>
         <span className={styles.layerDot} />
-        {calibrated ? `Offline Hastière + festival · ${anchors.length} ankers` : "Offline Hastière · kalibreer 2+ ankers"}
+        {corners ? `Festivalkaart · GPS uitgelijnd · ${anchors.length} ankers` : "Festivalkaart · kalibratie nodig"}
       </div>
     </div>
   );
