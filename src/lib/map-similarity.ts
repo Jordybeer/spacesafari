@@ -117,6 +117,10 @@ export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit |
   return { lat0, worldCenter, mapCenter, m11, m12, m21, m22 };
 }
 
+// Backwards-compatible name for the map UI while the implementation now uses
+// an affine fit for 3+ anchors and a similarity fit only for the 2-anchor case.
+export const fitSimilarity = fitMapTransform;
+
 export function projectWithFit(latitude: number, longitude: number, fit: MapTransformFit): { mapX: number; mapY: number } {
   const point = worldPoint(latitude, longitude, fit.lat0);
   const dx = point.x - fit.worldCenter.x;
