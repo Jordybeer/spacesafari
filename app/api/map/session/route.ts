@@ -31,6 +31,8 @@ export async function POST(request: Request) {
       photoUrl: member.photoUrl,
       horizontalAccuracy: member.horizontalAccuracy,
       updatedAt: member.updatedAt,
+      latitude: member.latitude,
+      longitude: member.longitude,
       mapX: member.mapX,
       mapY: member.mapY,
     }));
