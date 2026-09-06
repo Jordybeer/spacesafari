@@ -44,6 +44,9 @@ function similarityFallback(worlds: XY[], anchors: CalibrationAnchor[], worldCen
   let denom = 0;
   let dot = 0;
   let cross = 0;
+  let reflectA = 0;
+  let reflectB = 0;
+
   for (let index = 0; index < anchors.length; index += 1) {
     const wx = worlds[index].x - worldCenter.x;
     const wy = worlds[index].y - worldCenter.y;
@@ -52,12 +55,35 @@ function similarityFallback(worlds: XY[], anchors: CalibrationAnchor[], worldCen
     denom += wx * wx + wy * wy;
     dot += wx * mx + wy * my;
     cross += wx * my - wy * mx;
+    reflectA += wx * mx - wy * my;
+    reflectB += wy * mx + wx * my;
   }
   if (denom < 0.25) return null;
-  const a = dot / denom;
-  const b = cross / denom;
-  if (!Number.isFinite(a) || !Number.isFinite(b) || a * a + b * b < 1e-14) return null;
-  return { m11: a, m12: -b, m21: b, m22: a };
+
+  const directA = dot / denom;
+  const directB = cross / denom;
+  const mirrorA = reflectA / denom;
+  const mirrorB = reflectB / denom;
+
+  const direct = { m11: directA, m12: -directB, m21: directB, m22: directA };
+  const mirrored = { m11: mirrorA, m12: mirrorB, m21: mirrorB, m22: -mirrorA };
+
+  const score = (matrix: typeof direct) => anchors.reduce((sum, anchor, index) => {
+    const wx = worlds[index].x - worldCenter.x;
+    const wy = worlds[index].y - worldCenter.y;
+    const predictedX = matrix.m11 * wx + matrix.m12 * wy;
+    const predictedY = matrix.m21 * wx + matrix.m22 * wy;
+    const actualX = anchor.mapX - mapCenter.x;
+    const actualY = anchor.mapY - mapCenter.y;
+    return sum + (predictedX - actualX) ** 2 + (predictedY - actualY) ** 2;
+  }, 0);
+
+  const candidates = [direct, mirrored].filter((matrix) => {
+    const determinant = matrix.m11 * matrix.m22 - matrix.m12 * matrix.m21;
+    return Object.values(matrix).every(Number.isFinite) && Math.abs(determinant) >= 1e-14;
+  });
+  if (!candidates.length) return null;
+  return candidates.reduce((best, matrix) => score(matrix) < score(best) ? matrix : best);
 }
 
 export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit | null {
@@ -106,7 +132,7 @@ export function fitMapTransform(anchors: CalibrationAnchor[]): MapTransformFit |
   const conditioning = spread > 0 ? det / (spread * spread) : 0;
   // Festival anchors are often recorded along the same footpath. An affine fit
   // on nearly-collinear GPS points extrapolates the image corners wildly, so
-  // use the stable rotate/scale fit until anchors genuinely span two dimensions.
+  // use the stable rotate/scale/reflection fit until anchors genuinely span two dimensions.
   if (spread < 0.25 || det < 1 || conditioning < 0.005) {
     const matrix = similarityFallback(worlds, anchors, worldCenter, mapCenter);
     return matrix ? { lat0, worldCenter, mapCenter, ...matrix } : null;
