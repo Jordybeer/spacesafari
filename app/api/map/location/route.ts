@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
-import { putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
+import { MAX_PRESENCE_TTL_SECONDS, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isNearVenue } from "@/src/lib/venue";
 import { isRedisConfigured } from "@/src/lib/storage";
 
@@ -20,6 +20,7 @@ const RequestSchema = z.discriminatedUnion("action", [
     initData: z.string().min(1),
     mode: z.enum(["group", "public"]),
     location: LocationSchema,
+    ttlSeconds: z.number().int().min(60).max(MAX_PRESENCE_TTL_SECONDS).optional(),
   }),
   z.object({
     action: z.literal("stop"),
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
     if (!isNearVenue(input.location)) {
       return NextResponse.json({ error: "Locatie ligt buiten het Space Safari-terrein." }, { status: 422 });
     }
-    await putPresence(room, data.user, input.location);
+    await putPresence(room, data.user, input.location, input.ttlSeconds);
     return NextResponse.json({ ok: true, updatedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
