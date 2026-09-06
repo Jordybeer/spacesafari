@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import MapClientV2 from "./MapClientV2";
+import MapClientV3 from "./MapClientV3";
 
 type TelegramWindow = Window & {
   Telegram?: {
@@ -50,5 +50,5 @@ export default function TelegramReadyMap() {
     );
   }
 
-  return <MapClientV2 />;
+  return <MapClientV3 />;
 }
