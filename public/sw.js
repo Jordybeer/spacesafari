@@ -1,4 +1,4 @@
-const CACHE = "space-safari-static-v1";
+const CACHE = "space-safari-static-v2";
 const CORE = ["/map", "/festival-map.jpg"];
 
 self.addEventListener("install", (event) => {
