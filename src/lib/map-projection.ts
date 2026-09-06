@@ -1,12 +1,12 @@
 import type { MapAnchor, MapPresence, ProjectedPresence } from "./map-model";
-import { fitSimilarity, projectWithFit } from "./map-similarity";
+import { fitMapTransform, projectWithFit } from "./map-similarity";
 
 export function projectLocation(
   latitude: number,
   longitude: number,
   anchors: MapAnchor[],
 ): { mapX: number; mapY: number } | null {
-  const fit = fitSimilarity(anchors);
+  const fit = fitMapTransform(anchors);
   return fit ? projectWithFit(latitude, longitude, fit) : null;
 }
 
@@ -14,7 +14,7 @@ export function projectPresence(
   presence: MapPresence[],
   anchors: MapAnchor[],
 ): ProjectedPresence[] {
-  const fit = fitSimilarity(anchors);
+  const fit = fitMapTransform(anchors);
   return presence.map((member) => {
     const projected = fit ? projectWithFit(member.latitude, member.longitude, fit) : null;
     return {
