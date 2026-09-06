@@ -21,7 +21,7 @@ import {
 import { createPing, deletePing, listPings, setById } from "./pings";
 import { performerSets, type FestivalSet } from "@/src/data/timetable";
 import { STAGES } from "@/src/data/stages";
-import { privateRoomToken } from "./map-model";
+import { isMapAdmin, privateRoomToken } from "./map-model";
 import type { TelegramChat } from "./telegram";
 
 function shortSetKey(id: string): string {
@@ -263,17 +263,25 @@ export async function routeTelegramUpdate(update: TelegramUpdate): Promise<void>
     case "/map":
       await sendMap(message.chat, false);
       break;
-    case "/mapadmin":
+    case "/mapadmin": {
+      const userId = message.from?.id;
+      if (!userId || !isMapAdmin(userId)) {
+        await sendMessage(message.chat.id, "🔒 Kaartkalibratie is alleen beschikbaar voor de kaartbeheerder.");
+        break;
+      }
       await sendMap(message.chat, true);
       break;
+    }
     case "/id": {
       const userId = message.from?.id;
-      await sendMessage(
-        message.chat.id,
-        userId
-          ? `🪪 Jouw Telegram user ID is:\n${userId}\n\nGebruik dit nummer in MAP_ADMIN_TELEGRAM_IDS om calibration mode voor jezelf vrij te geven.`
-          : "Ik kon je Telegram user ID niet uit dit bericht lezen.",
-      );
+      if (!userId) {
+        await sendMessage(message.chat.id, "Ik kon je Telegram user ID niet uit dit bericht lezen.");
+        break;
+      }
+      const adminHint = isMapAdmin(userId)
+        ? "✅ Kaartbeheer is al actief voor dit account. Gebruik /mapadmin om ankers te plaatsen."
+        : "Gebruik dit nummer in MAP_ADMIN_TELEGRAM_IDS om kalibratiemodus voor jezelf vrij te geven.";
+      await sendMessage(message.chat.id, `🪪 Jouw Telegram user ID is:\n${userId}\n\n${adminHint}`);
       break;
     }
     default:
