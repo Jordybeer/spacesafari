@@ -75,6 +75,57 @@ function formatLastSeen(elapsedMs: number): string {
   return `laatst gezien ${days} d geleden`;
 }
 
+function attachPresenceTooltip(root: HTMLDivElement, text: string, live: boolean): void {
+  root.tabIndex = 0;
+  root.setAttribute("role", "button");
+  root.setAttribute("aria-expanded", "false");
+  root.dataset.presenceTooltipOpen = "false";
+
+  const tooltip = document.createElement("span");
+  tooltip.className = `${styles.geoLabel} ${live ? styles.geoLabelLive : styles.geoLabelStale}`;
+  tooltip.textContent = text;
+  tooltip.dataset.presenceTooltip = "true";
+  tooltip.style.top = "auto";
+  tooltip.style.bottom = "calc(100% + 8px)";
+  tooltip.style.display = "none";
+  tooltip.style.pointerEvents = "none";
+  root.appendChild(tooltip);
+
+  const setOpen = (open: boolean) => {
+    root.dataset.presenceTooltipOpen = open ? "true" : "false";
+    root.setAttribute("aria-expanded", String(open));
+    tooltip.style.display = open ? "inline-block" : "none";
+  };
+
+  const closeOtherTooltips = () => {
+    document.querySelectorAll<HTMLElement>("[data-presence-tooltip-open='true']").forEach((element) => {
+      if (element === root) return;
+      element.dataset.presenceTooltipOpen = "false";
+      element.setAttribute("aria-expanded", "false");
+      const otherTooltip = element.querySelector<HTMLElement>("[data-presence-tooltip]");
+      if (otherTooltip) otherTooltip.style.display = "none";
+    });
+  };
+
+  const toggle = () => {
+    const open = root.dataset.presenceTooltipOpen === "true";
+    closeOtherTooltips();
+    setOpen(!open);
+  };
+
+  root.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggle();
+  });
+  root.addEventListener("keydown", (event) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    event.stopPropagation();
+    toggle();
+  });
+  root.addEventListener("blur", () => setOpen(false));
+}
+
 function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolean, nowMs: number): HTMLDivElement {
   const elapsedMs = ageMs(member.updatedAt, nowMs);
   const live = elapsedMs <= LIVE_LOCATION_MS;
@@ -107,6 +158,8 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   presenceDot.className = `${styles.geoPresenceDot} ${live ? styles.geoPresenceLive : styles.geoPresenceStale}`;
   presenceDot.setAttribute("aria-hidden", "true");
   root.appendChild(presenceDot);
+
+  attachPresenceTooltip(root, `${name} · ${statusText}`, live);
 
   if (showNames) {
     const label = document.createElement("span");
@@ -268,6 +321,8 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     presenceDot.className = `${styles.geoPresenceDot} ${styles.geoPresenceLive}`;
     presenceDot.setAttribute("aria-hidden", "true");
     root.appendChild(presenceDot);
+
+    attachPresenceTooltip(root, "Jij · live", true);
 
     if (showNames) {
       const label = document.createElement("span");
