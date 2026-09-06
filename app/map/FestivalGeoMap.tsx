@@ -11,6 +11,8 @@ const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
 const FESTIVAL_SOURCE = "festival-overlay";
 const FESTIVAL_LAYER = "festival-overlay-layer";
 const FESTIVAL_IMAGE_URL = "/festival-terrain-overlay.webp?v=2";
+const LIVE_LOCATION_MS = 75_000;
+const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
@@ -52,9 +54,41 @@ function initials(name: string): string {
     .join("") || "?";
 }
 
-function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolean): HTMLDivElement {
+function memberName(member: GeoMember, isMe: boolean): string {
+  if (isMe) return "Jij";
+  return member.username ? `@${member.username}` : member.displayName;
+}
+
+function ageMs(updatedAt: string, nowMs: number): number {
+  const timestamp = Date.parse(updatedAt);
+  if (!Number.isFinite(timestamp)) return Number.POSITIVE_INFINITY;
+  return Math.max(0, nowMs - timestamp);
+}
+
+function formatLastSeen(elapsedMs: number): string {
+  if (!Number.isFinite(elapsedMs)) return "laatst gezien onbekend";
+  const minutes = Math.max(1, Math.floor(elapsedMs / 60_000));
+  if (minutes < 60) return `laatst gezien ${minutes} min geleden`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `laatst gezien ${hours} u geleden`;
+  const days = Math.floor(hours / 24);
+  return `laatst gezien ${days} d geleden`;
+}
+
+function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolean, nowMs: number): HTMLDivElement {
+  const elapsedMs = ageMs(member.updatedAt, nowMs);
+  const live = elapsedMs <= LIVE_LOCATION_MS;
+  const name = memberName(member, isMe);
+  const statusText = live ? "live" : formatLastSeen(elapsedMs);
+
   const root = document.createElement("div");
-  root.className = `${styles.geoMarker} ${isMe ? styles.geoMarkerMe : ""}`;
+  root.className = [
+    styles.geoMarker,
+    live ? styles.geoMarkerLive : styles.geoMarkerStale,
+    isMe ? styles.geoMarkerMe : "",
+  ].filter(Boolean).join(" ");
+  root.title = `${name} · ${statusText}`;
+  root.setAttribute("aria-label", `${name}, ${statusText}`);
 
   const avatar = document.createElement("div");
   avatar.className = styles.geoAvatar;
@@ -69,10 +103,15 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   }
   root.appendChild(avatar);
 
+  const presenceDot = document.createElement("span");
+  presenceDot.className = `${styles.geoPresenceDot} ${live ? styles.geoPresenceLive : styles.geoPresenceStale}`;
+  presenceDot.setAttribute("aria-hidden", "true");
+  root.appendChild(presenceDot);
+
   if (showNames) {
     const label = document.createElement("span");
-    label.className = styles.geoLabel;
-    label.textContent = isMe ? "Jij" : member.username ? `@${member.username}` : member.displayName;
+    label.className = `${styles.geoLabel} ${live ? styles.geoLabelLive : styles.geoLabelStale}`;
+    label.textContent = `${name} · ${statusText}`;
     root.appendChild(label);
   }
   return root;
@@ -97,10 +136,16 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
   const lastAutoFitKeyRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
+  const [presenceNow, setPresenceNow] = useState(() => Date.now());
 
   const corners = useMemo(() => festivalImageCorners(anchors), [anchors]);
   const cornerKey = corners ? corners.flat().map((value) => value.toFixed(8)).join(",") : "";
   const ownMember = useMemo(() => members.find((member) => member.userId === ownUserId), [members, ownUserId]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -189,7 +234,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     markersRef.current = members
       .filter(validPoint)
       .map((member) => new maplibre.Marker({
-        element: createMarkerElement(member, member.userId === ownUserId, showNames),
+        element: createMarkerElement(member, member.userId === ownUserId, showNames, presenceNow),
         anchor: "center",
       }).setLngLat([member.longitude, member.latitude]).addTo(map));
 
@@ -197,7 +242,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
       markersRef.current.forEach((marker) => marker.remove());
       markersRef.current = [];
     };
-  }, [mapReady, members, ownUserId, showNames]);
+  }, [mapReady, members, ownUserId, presenceNow, showNames]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -210,15 +255,24 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     if (!ownFix || alreadyVisible) return;
 
     const root = document.createElement("div");
-    root.className = `${styles.geoMarker} ${styles.geoMarkerMe} ${styles.geoMarkerGps}`;
+    root.className = `${styles.geoMarker} ${styles.geoMarkerLive} ${styles.geoMarkerMe} ${styles.geoMarkerGps}`;
+    root.title = "Jij · live";
+    root.setAttribute("aria-label", "Jij, live");
+
     const avatar = document.createElement("div");
     avatar.className = styles.geoAvatar;
     avatar.textContent = "●";
     root.appendChild(avatar);
+
+    const presenceDot = document.createElement("span");
+    presenceDot.className = `${styles.geoPresenceDot} ${styles.geoPresenceLive}`;
+    presenceDot.setAttribute("aria-hidden", "true");
+    root.appendChild(presenceDot);
+
     if (showNames) {
       const label = document.createElement("span");
-      label.className = styles.geoLabel;
-      label.textContent = "Jij";
+      label.className = `${styles.geoLabel} ${styles.geoLabelLive}`;
+      label.textContent = "Jij · live";
       root.appendChild(label);
     }
     ownFallbackMarkerRef.current = new maplibre.Marker({ element: root, anchor: "center" })
