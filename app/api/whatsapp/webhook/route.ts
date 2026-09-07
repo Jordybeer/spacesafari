@@ -2,6 +2,11 @@ import { NextResponse } from "next/server";
 import { optionalEnv } from "@/src/lib/env";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 import {
+  claimWhatsAppDelivery,
+  completeWhatsAppDelivery,
+  releaseWhatsAppDelivery,
+} from "@/src/lib/whatsapp-delivery";
+import {
   extractWhatsAppGroupTextMessages,
   isWhatsAppMapCommand,
   sendWhatsAppGroupText,
@@ -45,26 +50,46 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const messages = extractWhatsAppGroupTextMessages(payload);
-  const groupIds = Array.from(new Set(
-    messages
+  const messagesById = new Map(
+    extractWhatsAppGroupTextMessages(payload)
       .filter((message) => isWhatsAppMapCommand(message.text))
-      .map((message) => message.groupId),
-  ));
+      .map((message) => [message.messageId, message] as const),
+  );
+
+  let handled = 0;
+  let skipped = 0;
 
   try {
-    for (const groupId of groupIds) {
-      const link = whatsappMapLink(groupId);
-      await sendWhatsAppGroupText(
-        groupId,
-        [
-          "🛸 Space Safari Live",
-          "Open de privé-groepskaart:",
-          link,
-          "",
-          "De link maakt een tijdelijke pseudonieme Space Safari-sessie. Je telefoonnummer wordt niet als login opgeslagen.",
-        ].join("\n"),
-      );
+    for (const message of messagesById.values()) {
+      const claim = await claimWhatsAppDelivery(message.messageId);
+      if (claim === "complete") {
+        skipped += 1;
+        continue;
+      }
+      if (claim === "busy") {
+        throw new Error(`WhatsApp message ${message.messageId} is already being processed`);
+      }
+
+      try {
+        const link = whatsappMapLink(message.groupId);
+        await sendWhatsAppGroupText(
+          message.groupId,
+          [
+            "🛸 Space Safari Live",
+            "Open de privé-groepskaart:",
+            link,
+            "",
+            "De link maakt een tijdelijke pseudonieme Space Safari-sessie. Je telefoonnummer wordt niet als login opgeslagen.",
+          ].join("\n"),
+        );
+        await completeWhatsAppDelivery(message.messageId);
+        handled += 1;
+      } catch (error) {
+        await releaseWhatsAppDelivery(message.messageId).catch((releaseError) => {
+          console.error("WhatsApp delivery claim release failed", releaseError);
+        });
+        throw error;
+      }
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : "WhatsApp delivery failed";
@@ -72,5 +97,5 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "WhatsApp delivery failed" }, { status: 502 });
   }
 
-  return NextResponse.json({ ok: true, handled: groupIds.length });
+  return NextResponse.json({ ok: true, handled, skipped });
 }
