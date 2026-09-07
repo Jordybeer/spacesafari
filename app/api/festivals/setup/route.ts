@@ -5,6 +5,14 @@ import {
   updatePersistedFestival,
   verifyFestivalSetupToken,
 } from "@/src/lib/festival-store";
+import {
+  getFestivalSchedule,
+  localDateTimeToIso,
+  performerEntries,
+  saveFestivalSchedule,
+  scheduleTime,
+  type FestivalScheduleEntry,
+} from "@/src/lib/festival-schedule";
 import { deleteAnchor, listAnchors, saveAnchor } from "@/src/lib/map-model";
 
 export const runtime = "nodejs";
@@ -17,6 +25,16 @@ const AnchorSchema = z.object({
   longitude: z.number().min(-180).max(180),
   mapX: z.number().min(0).max(1),
   mapY: z.number().min(0).max(1),
+});
+
+const TimetableEntrySchema = z.object({
+  id: z.string().trim().min(1).max(120),
+  artist: z.string().trim().min(1).max(160),
+  stage: z.string().trim().min(1).max(100),
+  startsLocal: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  endsLocal: z.string().trim().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/),
+  live: z.boolean().optional().default(false),
+  note: z.string().trim().max(300).nullable().optional(),
 });
 
 const RequestSchema = z.discriminatedUnion("action", [
@@ -39,6 +57,12 @@ const RequestSchema = z.discriminatedUnion("action", [
     venueMaxDistanceMeters: z.number().int().min(100).max(50_000),
     anchors: z.array(AnchorSchema).max(30),
   }),
+  z.object({
+    action: z.literal("save-timetable"),
+    festivalId: z.string().trim().min(1).max(64),
+    token: z.string().min(16).max(256),
+    entries: z.array(TimetableEntrySchema).max(500),
+  }),
 ]);
 
 function publicFestival(festival: Awaited<ReturnType<typeof verifyFestivalSetupToken>>) {
@@ -57,6 +81,18 @@ function publicFestival(festival: Awaited<ReturnType<typeof verifyFestivalSetupT
   };
 }
 
+function publicSchedule(entries: FestivalScheduleEntry[], timezone: string) {
+  return entries.map((entry) => ({
+    id: entry.id,
+    artist: entry.artist,
+    stage: entry.stage,
+    startsLocal: scheduleTime(entry.startsAt, timezone).toFormat("yyyy-MM-dd'T'HH:mm"),
+    endsLocal: scheduleTime(entry.endsAt, timezone).toFormat("yyyy-MM-dd'T'HH:mm"),
+    live: entry.live,
+    note: entry.note,
+  }));
+}
+
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
@@ -73,10 +109,12 @@ export async function POST(request: Request) {
         createdAt,
       }, festival.id)));
 
+      const currentSchedule = await getFestivalSchedule(festival);
       const status = setupStatusFor({
         mapImageUrl: input.mapImageUrl,
         venueCenter: input.venueCenter,
         anchors: input.anchors.length,
+        timetableReady: performerEntries(currentSchedule).length > 0,
       });
       festival = await updatePersistedFestival(festival.id, {
         mapImageUrl: input.mapImageUrl,
@@ -91,7 +129,47 @@ export async function POST(request: Request) {
       });
     }
 
-    const anchors = await listAnchors(festival.id);
+    if (input.action === "save-timetable") {
+      const anchors = await listAnchors(festival.id);
+      if (!festival.mapImageUrl || !festival.venueCenter || !anchors.length) {
+        throw new Error("Werk eerst kaart + ankers af.");
+      }
+
+      const ids = new Set<string>();
+      const entries: FestivalScheduleEntry[] = input.entries.map((entry) => {
+        if (ids.has(entry.id)) throw new Error("Dubbele timetable-id.");
+        ids.add(entry.id);
+        const startsAt = localDateTimeToIso(entry.startsLocal, festival.timezone);
+        const endsAt = localDateTimeToIso(entry.endsLocal, festival.timezone);
+        if (Date.parse(endsAt) <= Date.parse(startsAt)) {
+          throw new Error(`${entry.artist}: eindtijd moet na de starttijd liggen.`);
+        }
+        return {
+          id: entry.id,
+          artist: entry.artist,
+          stage: entry.stage,
+          startsAt,
+          endsAt,
+          kind: "set",
+          live: entry.live,
+          note: entry.note?.trim() || null,
+        };
+      });
+
+      const saved = await saveFestivalSchedule(festival, entries);
+      const status = setupStatusFor({
+        mapImageUrl: festival.mapImageUrl,
+        venueCenter: festival.venueCenter,
+        anchors: anchors.length,
+        timetableReady: performerEntries(saved).length > 0,
+      });
+      festival = await updatePersistedFestival(festival.id, { status });
+    }
+
+    const [anchors, schedule] = await Promise.all([
+      listAnchors(festival.id),
+      getFestivalSchedule(festival),
+    ]);
     return NextResponse.json({
       ok: true,
       festival: publicFestival(festival),
@@ -103,6 +181,7 @@ export async function POST(request: Request) {
         mapX: anchor.mapX,
         mapY: anchor.mapY,
       })),
+      timetable: publicSchedule(schedule, festival.timezone),
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Festivalsetup mislukt.";

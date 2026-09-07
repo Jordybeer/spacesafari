@@ -13,6 +13,16 @@ type PlannedAnchor = {
   mapY: number;
 };
 
+type PlannedTimetableEntry = {
+  id: string;
+  artist: string;
+  stage: string;
+  startsLocal: string;
+  endsLocal: string;
+  live: boolean;
+  note: string | null;
+};
+
 type SetupStatus = "draft" | "map" | "anchors" | "timetable" | "ready";
 
 type FestivalDraft = {
@@ -32,6 +42,7 @@ type ConnectedFestival = {
   id: string;
   name: string;
   year: number;
+  timezone: string;
   status: SetupStatus;
   mapImageUrl: string;
   mapImageWidth: number;
@@ -43,6 +54,7 @@ type ConnectedFestival = {
 
 const STORAGE_KEY = "ginder-festival-draft-v1";
 const LEGACY_STORAGE_KEY = "space-safari-festival-draft-v1";
+const LOCAL_DATE_TIME_RE = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/;
 
 function slugify(value: string): string {
   return value.toLowerCase().trim().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 48);
@@ -68,16 +80,54 @@ function statusCopy(status: SetupStatus): string {
   switch (status) {
     case "map": return "Kaart + terrein nog instellen";
     case "anchors": return "Ankers nog instellen";
-    case "timetable": return "Kaart klaar · timetable is de volgende stap";
+    case "timetable": return "Kaart klaar · timetable nog instellen";
     case "ready": return "Klaar";
     default: return "Concept";
   }
+}
+
+function normalizeLocalDateTime(value: string): string {
+  const normalized = value.trim().replace(" ", "T").slice(0, 16);
+  return LOCAL_DATE_TIME_RE.test(normalized) ? normalized : "";
+}
+
+function importedTimetable(text: string): { entries: PlannedTimetableEntry[]; invalid: number } {
+  const entries: PlannedTimetableEntry[] = [];
+  let invalid = 0;
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+
+  for (const line of lines) {
+    const delimiter = line.includes("\t") ? "\t" : line.includes(";") ? ";" : "|";
+    const parts = line.split(delimiter).map((part) => part.trim());
+    if (parts[0]?.toLowerCase() === "artist" || parts[0]?.toLowerCase() === "artiest") continue;
+    if (parts.length < 4) {
+      invalid += 1;
+      continue;
+    }
+    const startsLocal = normalizeLocalDateTime(parts[2]);
+    const endsLocal = normalizeLocalDateTime(parts[3]);
+    if (!parts[0] || !parts[1] || !startsLocal || !endsLocal) {
+      invalid += 1;
+      continue;
+    }
+    entries.push({
+      id: `set-${crypto.randomUUID()}`,
+      artist: parts[0],
+      stage: parts[1],
+      startsLocal,
+      endsLocal,
+      live: /^(1|true|live|ja)$/i.test(parts[4] ?? ""),
+      note: parts[5]?.trim() || null,
+    });
+  }
+  return { entries, invalid };
 }
 
 export default function FestivalSetupClient() {
   const imageRef = useRef<HTMLDivElement>(null);
   const [name, setName] = useState("Nieuw festival");
   const [year, setYear] = useState(new Date().getFullYear());
+  const [timezone, setTimezone] = useState("Europe/Brussels");
   const [mapImageUrl, setMapImageUrl] = useState("");
   const [mapImageWidth, setMapImageWidth] = useState(640);
   const [mapImageHeight, setMapImageHeight] = useState(800);
@@ -89,6 +139,12 @@ export default function FestivalSetupClient() {
   const [anchorLon, setAnchorLon] = useState("");
   const [point, setPoint] = useState<{ x: number; y: number } | null>(null);
   const [anchors, setAnchors] = useState<PlannedAnchor[]>([]);
+  const [timetable, setTimetable] = useState<PlannedTimetableEntry[]>([]);
+  const [artist, setArtist] = useState("");
+  const [stage, setStage] = useState("");
+  const [startsLocal, setStartsLocal] = useState("");
+  const [endsLocal, setEndsLocal] = useState("");
+  const [bulkTimetable, setBulkTimetable] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [connectedFestivalId, setConnectedFestivalId] = useState<string | null>(null);
@@ -144,6 +200,7 @@ export default function FestivalSetupClient() {
           error?: string;
           festival?: ConnectedFestival;
           anchors?: PlannedAnchor[];
+          timetable?: PlannedTimetableEntry[];
         };
         if (!response.ok || !payload.ok || !payload.festival) {
           throw new Error(payload.error || "Festival kon niet worden geladen.");
@@ -152,6 +209,7 @@ export default function FestivalSetupClient() {
         const festival = payload.festival;
         setName(festival.name);
         setYear(festival.year);
+        setTimezone(festival.timezone || "Europe/Brussels");
         setStatus(festival.status);
         setMapImageUrl(festival.mapImageUrl || "");
         setMapImageWidth(festival.mapImageWidth || 640);
@@ -160,6 +218,7 @@ export default function FestivalSetupClient() {
         setCenterLon(festival.venueCenter.latitude || festival.venueCenter.longitude ? String(festival.venueCenter.longitude) : "");
         setRadius(String(festival.venueMaxDistanceMeters || 3000));
         setAnchors(payload.anchors ?? []);
+        setTimetable(payload.timetable ?? []);
         setMessage(festival.chatTitle ? `Gekoppeld aan ${festival.chatTitle}.` : "Festival geladen.");
       }).catch((error) => {
         if (!cancelled) setMessage(error instanceof Error ? error.message : "Festival kon niet worden geladen.");
@@ -205,6 +264,39 @@ export default function FestivalSetupClient() {
     setMessage(null);
   };
 
+  const addTimetableEntry = () => {
+    if (!artist.trim() || !stage.trim() || !LOCAL_DATE_TIME_RE.test(startsLocal) || !LOCAL_DATE_TIME_RE.test(endsLocal)) {
+      setMessage("Vul artiest, stage, start en einde in.");
+      return;
+    }
+    if (endsLocal <= startsLocal) {
+      setMessage("De eindtijd moet na de starttijd liggen.");
+      return;
+    }
+    setTimetable((current) => [...current, {
+      id: `set-${crypto.randomUUID()}`,
+      artist: artist.trim(),
+      stage: stage.trim(),
+      startsLocal,
+      endsLocal,
+      live: false,
+      note: null,
+    }].sort((a, b) => a.startsLocal.localeCompare(b.startsLocal)));
+    setArtist("");
+    setMessage(null);
+  };
+
+  const importBulkTimetable = () => {
+    const parsed = importedTimetable(bulkTimetable);
+    if (!parsed.entries.length) {
+      setMessage("Geen geldige timetable-regels gevonden.");
+      return;
+    }
+    setTimetable((current) => [...current, ...parsed.entries].sort((a, b) => a.startsLocal.localeCompare(b.startsLocal)));
+    setBulkTimetable("");
+    setMessage(`${parsed.entries.length} set${parsed.entries.length === 1 ? "" : "s"} toegevoegd${parsed.invalid ? ` · ${parsed.invalid} regel${parsed.invalid === 1 ? "" : "s"} overgeslagen` : ""}.`);
+  };
+
   const saveConnected = async () => {
     if (!connectedFestivalId || !setupToken) return;
     if (!draft || !draft.mapImageUrl) {
@@ -235,15 +327,50 @@ export default function FestivalSetupClient() {
         }),
         cache: "no-store",
       });
-      const payload = await response.json() as { ok?: boolean; error?: string; festival?: ConnectedFestival; anchors?: PlannedAnchor[] };
+      const payload = await response.json() as { ok?: boolean; error?: string; festival?: ConnectedFestival; anchors?: PlannedAnchor[]; timetable?: PlannedTimetableEntry[] };
       if (!response.ok || !payload.ok || !payload.festival) throw new Error(payload.error || "Opslaan mislukte.");
       setStatus(payload.festival.status);
       setAnchors(payload.anchors ?? anchors);
+      setTimetable(payload.timetable ?? timetable);
       setMessage(payload.festival.status === "timetable"
-        ? "Kaart + ankers staan goed. Timetable is de volgende stap."
+        ? "Kaart + ankers staan goed. Zet nu de timetable eronder."
         : `Opgeslagen · ${statusCopy(payload.festival.status)}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Opslaan mislukte.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveTimetable = async () => {
+    if (!connectedFestivalId || !setupToken) return;
+    if (!timetable.length) {
+      setMessage("Voeg minstens één set toe voor je de timetable opslaat.");
+      return;
+    }
+    setBusy(true);
+    setMessage(null);
+    try {
+      const response = await fetch("/api/festivals/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          action: "save-timetable",
+          festivalId: connectedFestivalId,
+          token: setupToken,
+          entries: timetable,
+        }),
+        cache: "no-store",
+      });
+      const payload = await response.json() as { ok?: boolean; error?: string; festival?: ConnectedFestival; timetable?: PlannedTimetableEntry[] };
+      if (!response.ok || !payload.ok || !payload.festival) throw new Error(payload.error || "Timetable opslaan mislukte.");
+      setStatus(payload.festival.status);
+      setTimetable(payload.timetable ?? timetable);
+      setMessage(payload.festival.status === "ready"
+        ? `${payload.festival.name} staat klaar in Ginder. 🎪`
+        : `Timetable opgeslagen · ${statusCopy(payload.festival.status)}.`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Timetable opslaan mislukte.");
     } finally {
       setBusy(false);
     }
@@ -304,6 +431,7 @@ export default function FestivalSetupClient() {
         <div className={styles.grid}>
           <label>Naam<input value={name} disabled={connected} onChange={(e) => setName(e.target.value)} /></label>
           <label>Jaar<input type="number" value={year} disabled={connected} onChange={(e) => setYear(Number(e.target.value) || year)} /></label>
+          {connected && <label>Timezone<input value={timezone} disabled /></label>}
           <label className={styles.wide}>Kaart-afbeelding URL<input placeholder="Stuur de kaart naar Ginder of plak een URL" value={mapImageUrl} onChange={(e) => setMapImageUrl(e.target.value)} /></label>
           <label>Centrum latitude<input inputMode="decimal" placeholder="50.12345" value={centerLat} onChange={(e) => setCenterLat(e.target.value)} /></label>
           <label>Centrum longitude<input inputMode="decimal" placeholder="4.12345" value={centerLon} onChange={(e) => setCenterLon(e.target.value)} /></label>
@@ -351,12 +479,40 @@ export default function FestivalSetupClient() {
             </div>
           ))}
         </div>
+        {connected && <button className={styles.primary} type="button" disabled={busy} onClick={() => void saveConnected()}>{busy ? "Opslaan…" : "Bewaar kaart + ankers"}</button>}
       </section>
 
+      {connected && (
+        <section className={styles.card}>
+          <div className={styles.sectionHead}><h2>3 · Timetable</h2><span>{timetable.length} sets · {timezone}</span></div>
+          <p className={styles.help}>Voeg sets één voor één toe of plak ineens een lijst. Bulkformaat: <code>Artiest ; Stage ; 2027-07-10 18:00 ; 2027-07-10 19:00</code>. Tabs en | werken ook.</p>
+          <div className={styles.grid}>
+            <label>Artiest<input value={artist} onChange={(e) => setArtist(e.target.value)} placeholder="DJ / band" /></label>
+            <label>Stage<input value={stage} onChange={(e) => setStage(e.target.value)} placeholder="Main / Club / ..." /></label>
+            <label>Start<input type="datetime-local" value={startsLocal} onChange={(e) => setStartsLocal(e.target.value)} /></label>
+            <label>Einde<input type="datetime-local" value={endsLocal} onChange={(e) => setEndsLocal(e.target.value)} /></label>
+          </div>
+          <button className={styles.primary} type="button" onClick={addTimetableEntry}>+ Set toevoegen</button>
+
+          <label className={styles.bulkLabel}>Plak timetable
+            <textarea value={bulkTimetable} onChange={(e) => setBulkTimetable(e.target.value)} placeholder={`Artiest A ; Main ; ${year}-07-10 18:00 ; ${year}-07-10 19:00\nArtiest B ; Club ; ${year}-07-10 18:30 ; ${year}-07-10 20:00`} />
+          </label>
+          <button type="button" className={styles.secondary} disabled={!bulkTimetable.trim()} onClick={importBulkTimetable}>Lijst toevoegen</button>
+
+          <div className={styles.rows}>
+            {timetable.map((entry) => (
+              <div className={styles.row} key={entry.id}>
+                <div><strong>{entry.artist}</strong><small>{entry.stage} · {entry.startsLocal.replace("T", " ")}–{entry.endsLocal.slice(11)}</small></div>
+                <button type="button" onClick={() => setTimetable((current) => current.filter((item) => item.id !== entry.id))}>Verwijder</button>
+              </div>
+            ))}
+          </div>
+          <button className={styles.primary} type="button" disabled={busy || !timetable.length} onClick={() => void saveTimetable()}>{busy ? "Opslaan…" : "Bewaar timetable"}</button>
+        </section>
+      )}
+
       <section className={styles.actions}>
-        {connected ? (
-          <button className={styles.primary} type="button" disabled={busy} onClick={() => void saveConnected()}>{busy ? "Opslaan…" : "Bewaar festivalsetup"}</button>
-        ) : (
+        {!connected && (
           <>
             <button type="button" onClick={loadDraft}>Laad concept</button>
             <button type="button" onClick={saveDraft}>Bewaar concept</button>
