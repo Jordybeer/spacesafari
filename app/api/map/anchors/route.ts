@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { festivalSelectorForContext } from "@/src/lib/festival-links";
-import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { isFestivalOwner, requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { deleteAnchor, isMapAdmin, listAnchors, saveAnchor } from "@/src/lib/map-model";
 import { isNearFestival } from "@/src/lib/venue";
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
       festivalSelectorForContext(data.source, data.startParam, input.festivalId),
     );
 
-    if (!isMapAdmin(data.user.id)) {
+    if (!isMapAdmin(data.user.id) && !isFestivalOwner(festival, data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
 
