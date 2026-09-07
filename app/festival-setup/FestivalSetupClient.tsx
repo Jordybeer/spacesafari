@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import styles from "./FestivalSetup.module.css";
 
@@ -121,8 +122,10 @@ export default function FestivalSetupClient() {
     const token = hash.get("token")?.trim() ?? "";
     if (!festivalId) return;
     if (!token) {
-      setMessage("Deze festival-link mist de setup-sleutel. Open de link opnieuw vanuit je Ginder-groep.");
-      return;
+      const timer = window.setTimeout(() => {
+        setMessage("Deze festival-link mist de setup-sleutel. Open de link opnieuw vanuit je Ginder-groep.");
+      }, 0);
+      return () => window.clearTimeout(timer);
     }
 
     setConnectedFestivalId(festivalId);
@@ -279,7 +282,7 @@ export default function FestivalSetupClient() {
           <div className={styles.kicker}>{connected ? "GINDER SETUP" : "GINDER PLANNER"}</div>
           <h1>{connected ? name : "Festival voorbereiden"}</h1>
         </div>
-        <a href="/" className={styles.back}>← Ginder</a>
+        <Link href="/" className={styles.back}>← Ginder</Link>
       </header>
 
       <section className={styles.card}>
