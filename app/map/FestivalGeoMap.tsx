@@ -2,15 +2,12 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
+import { parseFestivalStartParam } from "@/src/lib/festival-links";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { festivalImageCorners, type GeoAnchor, type LngLatTuple } from "@/src/lib/map-georef";
-import { VENUE_CENTER as VENUE } from "@/src/lib/venue";
 import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
-const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const FESTIVAL_IMAGE_URL = "/festival-map-original.png?v=4";
-const FESTIVAL_IMAGE_WIDTH = 640;
-const FESTIVAL_IMAGE_HEIGHT = 800;
 const LIVE_LOCATION_MS = 75_000;
 const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
@@ -56,6 +53,17 @@ export interface GeoTentPoint {
   createdAt: string;
 }
 
+interface FestivalMapConfig {
+  id: string;
+  name: string;
+  year: number;
+  status: "draft" | "map" | "anchors" | "timetable" | "ready";
+  mapImageUrl: string;
+  mapImageWidth: number;
+  mapImageHeight: number;
+  venueCenter: { latitude: number; longitude: number };
+}
+
 interface LocationFix {
   latitude: number;
   longitude: number;
@@ -71,6 +79,10 @@ interface FestivalGeoMapProps {
   ownFix: LocationFix | null;
   showNames: boolean;
 }
+
+type TelegramWindow = Window & {
+  Telegram?: { WebApp?: { initData?: string } };
+};
 
 function initials(name: string): string {
   return name
@@ -98,8 +110,7 @@ function formatLastSeen(elapsedMs: number): string {
   if (minutes < 60) return `laatst gezien ${minutes} min geleden`;
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `laatst gezien ${hours} u geleden`;
-  const days = Math.floor(hours / 24);
-  return `laatst gezien ${days} d geleden`;
+  return `laatst gezien ${Math.floor(hours / 24)} d geleden`;
 }
 
 function attachPresenceTooltip(root: HTMLDivElement, text: string, live: boolean): void {
@@ -240,7 +251,6 @@ function createSpecialMarkerElement(kind: "meet" | "tent", label: string, detail
 
   const bubble = document.createElement("div");
   bubble.dataset.specialBubble = "true";
-  bubble.textContent = kind === "meet" ? "📍" : "⛺";
   Object.assign(bubble.style, {
     width: kind === "meet" ? "42px" : "36px",
     height: kind === "meet" ? "42px" : "36px",
@@ -253,10 +263,9 @@ function createSpecialMarkerElement(kind: "meet" | "tent", label: string, detail
     boxShadow: kind === "meet" ? "0 0 0 6px rgba(243,107,23,.18), 0 6px 18px rgba(0,0,0,.42)" : "0 5px 15px rgba(0,0,0,.4)",
   });
   const emoji = document.createElement("span");
-  emoji.textContent = bubble.textContent;
+  emoji.textContent = kind === "meet" ? "📍" : "⛺";
   emoji.style.transform = "rotate(45deg)";
   emoji.style.fontSize = kind === "meet" ? "20px" : "17px";
-  bubble.textContent = "";
   bubble.appendChild(emoji);
   root.appendChild(bubble);
 
@@ -274,23 +283,27 @@ function validPoint(value: { latitude: number; longitude: number } | null | unde
   return Boolean(value && Number.isFinite(value.latitude) && Number.isFinite(value.longitude));
 }
 
+function validVenueCenter(value: FestivalMapConfig["venueCenter"]): boolean {
+  return validPoint(value) && !(value.latitude === 0 && value.longitude === 0);
+}
+
 function boundsForCorners(maplibre: typeof import("maplibre-gl"), corners: readonly LngLatTuple[]) {
   const bounds = new maplibre.LngLatBounds(corners[0], corners[0]);
   corners.slice(1).forEach((corner) => bounds.extend(corner));
   return bounds;
 }
 
-function prepareFestivalArtwork(map: MapLibreMap): HTMLImageElement {
+function prepareFestivalArtwork(map: MapLibreMap, festival: FestivalMapConfig): HTMLImageElement {
   const image = document.createElement("img");
-  image.src = FESTIVAL_IMAGE_URL;
+  image.src = festival.mapImageUrl;
   image.alt = "";
   image.draggable = false;
   image.setAttribute("aria-hidden", "true");
   image.style.position = "absolute";
   image.style.left = "0";
   image.style.top = "0";
-  image.style.width = `${FESTIVAL_IMAGE_WIDTH}px`;
-  image.style.height = `${FESTIVAL_IMAGE_HEIGHT}px`;
+  image.style.width = `${festival.mapImageWidth}px`;
+  image.style.height = `${festival.mapImageHeight}px`;
   image.style.maxWidth = "none";
   image.style.transformOrigin = "0 0";
   image.style.pointerEvents = "none";
@@ -298,12 +311,16 @@ function prepareFestivalArtwork(map: MapLibreMap): HTMLImageElement {
   image.style.zIndex = "1";
 
   const canvas = map.getCanvas();
-  const canvasContainer = map.getCanvasContainer();
-  canvasContainer.insertBefore(image, canvas.nextSibling);
+  map.getCanvasContainer().insertBefore(image, canvas.nextSibling);
   return image;
 }
 
-function positionFestivalArtwork(map: MapLibreMap, image: HTMLImageElement, corners: readonly LngLatTuple[] | null): void {
+function positionFestivalArtwork(
+  map: MapLibreMap,
+  image: HTMLImageElement,
+  corners: readonly LngLatTuple[] | null,
+  festival: FestivalMapConfig,
+): void {
   if (!corners) {
     image.style.display = "block";
     image.style.left = "0";
@@ -318,18 +335,30 @@ function positionFestivalArtwork(map: MapLibreMap, image: HTMLImageElement, corn
   const topLeft = map.project(corners[0]);
   const topRight = map.project(corners[1]);
   const bottomLeft = map.project(corners[3]);
-  const a = (topRight.x - topLeft.x) / FESTIVAL_IMAGE_WIDTH;
-  const b = (topRight.y - topLeft.y) / FESTIVAL_IMAGE_WIDTH;
-  const c = (bottomLeft.x - topLeft.x) / FESTIVAL_IMAGE_HEIGHT;
-  const d = (bottomLeft.y - topLeft.y) / FESTIVAL_IMAGE_HEIGHT;
+  const a = (topRight.x - topLeft.x) / festival.mapImageWidth;
+  const b = (topRight.y - topLeft.y) / festival.mapImageWidth;
+  const c = (bottomLeft.x - topLeft.x) / festival.mapImageHeight;
+  const d = (bottomLeft.y - topLeft.y) / festival.mapImageHeight;
 
   image.style.display = "block";
   image.style.left = "0";
   image.style.top = "0";
-  image.style.width = `${FESTIVAL_IMAGE_WIDTH}px`;
-  image.style.height = `${FESTIVAL_IMAGE_HEIGHT}px`;
+  image.style.width = `${festival.mapImageWidth}px`;
+  image.style.height = `${festival.mapImageHeight}px`;
   image.style.objectFit = "fill";
   image.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${topLeft.x}, ${topLeft.y})`;
+}
+
+function launchFestivalSelector(): string {
+  const query = new URLSearchParams(window.location.search);
+  const explicit = query.get("festival")?.trim();
+  if (explicit) return explicit;
+
+  const initData = (window as TelegramWindow).Telegram?.WebApp?.initData ?? "";
+  const startParam = initData
+    ? new URLSearchParams(initData).get("start_param")
+    : query.get("startapp");
+  return parseFestivalStartParam(startParam).selector ?? DEFAULT_FESTIVAL_ID;
 }
 
 export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
@@ -341,13 +370,40 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
   const specialMarkersRef = useRef<MapLibreMarker[]>([]);
   const ownFallbackMarkerRef = useRef<MapLibreMarker | null>(null);
   const lastAutoFitKeyRef = useRef("");
+  const [festival, setFestival] = useState<FestivalMapConfig | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
   const [mapReady, setMapReady] = useState(false);
   const [mapFailed, setMapFailed] = useState(false);
   const [presenceNow, setPresenceNow] = useState(() => Date.now());
 
-  const corners = useMemo(() => festivalImageCorners(anchors), [anchors]);
+  useEffect(() => {
+    let cancelled = false;
+    const selector = launchFestivalSelector();
+    void fetch(`/api/festivals/resolve?selector=${encodeURIComponent(selector)}`, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = await response.json() as { festival?: FestivalMapConfig; error?: string };
+        if (!response.ok || !payload.festival) throw new Error(payload.error || "Festival kon niet worden geladen.");
+        if (!cancelled) {
+          setFestival(payload.festival);
+          setConfigError(null);
+        }
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setFestival(null);
+          setConfigError(error instanceof Error ? error.message : "Festival kon niet worden geladen.");
+        }
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  const corners = useMemo(
+    () => festival ? festivalImageCorners(anchors, festival.mapImageWidth, festival.mapImageHeight) : null,
+    [anchors, festival],
+  );
   const cornerKey = corners ? corners.flat().map((value) => value.toFixed(8)).join(",") : "";
   const ownMember = useMemo(() => members.find((member) => member.userId === ownUserId), [members, ownUserId]);
+  const mapConfigured = Boolean(festival?.mapImageUrl && festival && validVenueCenter(festival.venueCenter));
 
   useEffect(() => {
     const timer = window.setInterval(() => setPresenceNow(Date.now()), PRESENCE_TICK_MS);
@@ -355,8 +411,11 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
   }, []);
 
   useEffect(() => {
-    if (!containerRef.current || mapRef.current) return;
+    if (!containerRef.current || !festival || !mapConfigured) return;
     let cancelled = false;
+    setMapReady(false);
+    setMapFailed(false);
+    lastAutoFitKeyRef.current = "";
 
     void import("maplibre-gl").then((maplibre) => {
       if (cancelled || !containerRef.current) return;
@@ -365,7 +424,7 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
       const map = new maplibre.Map({
         container: containerRef.current,
         style: LOCAL_STYLE,
-        center: VENUE_CENTER,
+        center: [festival.venueCenter.longitude, festival.venueCenter.latitude],
         zoom: 15.8,
         minZoom: 13,
         maxZoom: 20,
@@ -377,7 +436,8 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
       mapRef.current = map;
       map.once("load", () => {
         if (cancelled) return;
-        artworkRef.current = prepareFestivalArtwork(map);
+        artworkRef.current = prepareFestivalArtwork(map, festival);
+        artworkRef.current.addEventListener("error", () => setMapFailed(true), { once: true });
         setMapReady(true);
       });
     }).catch(() => { if (!cancelled) setMapFailed(true); });
@@ -395,16 +455,17 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
       mapRef.current?.remove();
       mapRef.current = null;
       maplibreRef.current = null;
+      setMapReady(false);
     };
-  }, []);
+  }, [festival, mapConfigured]);
 
   useEffect(() => {
     const map = mapRef.current;
     const maplibre = maplibreRef.current;
     const artwork = artworkRef.current;
-    if (!map || !maplibre || !artwork || !mapReady) return;
+    if (!map || !maplibre || !artwork || !mapReady || !festival) return;
 
-    const updateArtwork = () => positionFestivalArtwork(map, artwork, corners);
+    const updateArtwork = () => positionFestivalArtwork(map, artwork, corners, festival);
     updateArtwork();
     map.on("move", updateArtwork);
     map.on("resize", updateArtwork);
@@ -425,7 +486,7 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
       map.off("move", updateArtwork);
       map.off("resize", updateArtwork);
     };
-  }, [cornerKey, corners, mapReady]);
+  }, [cornerKey, corners, festival, mapReady]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -560,10 +621,11 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
 
   const canFocusSelf = validPoint(ownFix) || validPoint(ownMember);
   const canFitPeople = members.some(validPoint) || validPoint(ownFix);
+  const label = festival ? `${festival.name} festivalkaart` : "Festivalkaart";
 
   return (
     <div className={styles.geoMapWrap}>
-      <div ref={containerRef} className={styles.geoMap} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
+      <div ref={containerRef} className={styles.geoMap} aria-label={label} />
 
       {mapReady && (
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
@@ -574,11 +636,21 @@ export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserI
         </div>
       )}
 
-      {mapFailed && <div className={mapUi.fallbackLink}>De live kaart kon niet starten.</div>}
+      {configError && <div className={mapUi.fallbackLink}>{configError}</div>}
+      {festival && !mapConfigured && !configError && (
+        <div className={mapUi.fallbackLink}>De kaart voor {festival.name} is nog niet volledig ingesteld.</div>
+      )}
+      {mapFailed && <div className={mapUi.fallbackLink}>De festivalkaart kon niet starten.</div>}
 
       <div className={styles.mapLayerBadge}>
         <span className={styles.layerDot} />
-        {corners ? `Festivalkaart · GPS uitgelijnd · ${anchors.length} ankers` : "Festivalkaart · kalibratie nodig"}
+        {!festival
+          ? "Festival laden…"
+          : !mapConfigured
+            ? `${festival.name} · setup nodig`
+            : corners
+              ? `${festival.name} · GPS uitgelijnd · ${anchors.length} ankers`
+              : `${festival.name} · kalibratie nodig`}
       </div>
     </div>
   );

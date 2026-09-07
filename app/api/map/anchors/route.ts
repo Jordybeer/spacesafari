@@ -1,7 +1,9 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
+import { parseFestivalStartParam } from "@/src/lib/festival-links";
+import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { deleteAnchor, isMapAdmin, listAnchors, saveAnchor } from "@/src/lib/map-model";
 import { isNearFestival } from "@/src/lib/venue";
@@ -13,7 +15,7 @@ export const dynamic = "force-dynamic";
 const BaseSchema = z.object({
   initData: z.string().min(1).optional(),
   roomToken: z.string().optional(),
-  festivalId: z.string().trim().min(1).max(64).optional().default(DEFAULT_FESTIVAL_ID),
+  festivalId: z.string().trim().min(1).max(64).optional(),
 });
 const RequestSchema = z.discriminatedUnion("action", [
   BaseSchema.extend({ action: z.literal("list") }),
@@ -32,8 +34,9 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const festival = requireFestivalDefinition(input.festivalId);
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
+    const launchFestival = parseFestivalStartParam(data.startParam).selector;
+    const festival = await requireResolvedFestivalDefinition(input.festivalId ?? launchFestival ?? DEFAULT_FESTIVAL_ID);
 
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
