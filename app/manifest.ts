@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Ginder",
     short_name: "Ginder",
     description: "Festivalkaart, timetable en opt-in live groepslocaties",
-    start_url: "/map",
+    start_url: "/",
     scope: "/",
     display: "standalone",
     background_color: "#251225",
