@@ -8,9 +8,9 @@ import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
 const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const FESTIVAL_SOURCE = "festival-overlay";
-const FESTIVAL_LAYER = "festival-overlay-layer";
-const FESTIVAL_IMAGE_URL = "/festival-terrain-overlay.webp?v=2";
+const FESTIVAL_SOURCE = "festival-map";
+const FESTIVAL_LAYER = "festival-map-layer";
+const FESTIVAL_IMAGE_URL = "/festival-map.jpg?v=5";
 const LIVE_LOCATION_MS = 75_000;
 const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
@@ -160,7 +160,7 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   presenceDot.setAttribute("aria-hidden", "true");
   root.appendChild(presenceDot);
 
-  attachPresenceTooltip(root, `${name} · ${statusText}`, live);
+  attachPresenceTooltip(root, showNames ? statusText : `${name} · ${statusText}`, live);
 
   if (showNames) {
     const label = document.createElement("span");
@@ -323,7 +323,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     presenceDot.setAttribute("aria-hidden", "true");
     root.appendChild(presenceDot);
 
-    attachPresenceTooltip(root, "Jij · live", true);
+    attachPresenceTooltip(root, showNames ? "live" : "Jij · live", true);
 
     if (showNames) {
       const label = document.createElement("span");
