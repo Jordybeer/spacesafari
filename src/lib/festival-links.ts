@@ -31,3 +31,20 @@ export function parseFestivalStartParam(value?: string | null): ParsedFestivalSt
 
   return { selector: null, roomToken: null };
 }
+
+/**
+ * Telegram Mini App launch data is signed by Telegram and therefore wins over any
+ * client-provided festival selector. Browser/web-login flows may use their explicit
+ * selector because they do not carry a signed Mini App start parameter.
+ */
+export function festivalSelectorForContext(
+  source: "miniapp" | "web" | null | undefined,
+  startParam: string | null | undefined,
+  requestedFestivalId?: string | null,
+): string {
+  if (source === "miniapp") {
+    return parseFestivalStartParam(startParam).selector ?? DEFAULT_FESTIVAL_ID;
+  }
+
+  return requestedFestivalId?.trim() || DEFAULT_FESTIVAL_ID;
+}
