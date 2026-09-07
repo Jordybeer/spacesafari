@@ -48,7 +48,7 @@ export async function createPing(
   chatId: string,
   set: PingSet,
   festivalId = DEFAULT_FESTIVAL_ID,
-  timezone = FESTIVAL_TIMEZONE,
+  timezone: string = FESTIVAL_TIMEZONE,
 ): Promise<{
   ping: ArtistPing;
   duplicate: boolean;
