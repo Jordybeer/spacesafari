@@ -29,6 +29,7 @@ export interface GeoMember {
   longitude: number;
   mapX: number | null;
   mapY: number | null;
+  simulated?: boolean;
 }
 
 interface LocationFix {
@@ -128,9 +129,9 @@ function attachPresenceTooltip(root: HTMLDivElement, text: string, live: boolean
 
 function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolean, nowMs: number): HTMLDivElement {
   const elapsedMs = ageMs(member.updatedAt, nowMs);
-  const live = elapsedMs <= LIVE_LOCATION_MS;
+  const live = Boolean(member.simulated) || elapsedMs <= LIVE_LOCATION_MS;
   const name = memberName(member, isMe);
-  const statusText = live ? "live" : formatLastSeen(elapsedMs);
+  const statusText = member.simulated ? "testlocatie" : live ? "live" : formatLastSeen(elapsedMs);
 
   const root = document.createElement("div");
   root.className = [
