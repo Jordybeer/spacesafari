@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import "maplibre-gl/dist/maplibre-gl.css";
 import "./globals.css";
+import "./telegram-viewport.css";
 
 export const metadata: Metadata = {
   title: "Space Safari Assistant",
