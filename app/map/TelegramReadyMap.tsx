@@ -45,7 +45,7 @@ export default function TelegramReadyMap() {
     return (
       <main style={{ minHeight: "100svh", display: "grid", placeItems: "center", padding: 24 }}>
         <div style={{ color: "rgba(248,232,209,.68)", fontSize: 12, letterSpacing: ".08em" }}>
-          SPACE SAFARI · laden…
+          GINDER · kaart laden…
         </div>
       </main>
     );
