@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { isRedisConfigured } from "@/src/lib/storage";
 import { hasMapAdminConfiguration } from "@/src/lib/map-model";
+import { requireEnv } from "@/src/lib/env";
 import SetupClient from "./SetupClient";
 
 export const metadata: Metadata = {
@@ -24,7 +25,7 @@ async function getWebhookReadiness(): Promise<{ active: boolean; pending: number
     const payload = await response.json() as { ok?: boolean; result?: WebhookInfo };
     if (!response.ok || !payload.ok || !payload.result) return { active: false, pending: null };
 
-    const appUrl = (process.env.APP_URL || "https://spacesafari.jordy.beer").replace(/\/$/, "");
+    const appUrl = requireEnv("APP_URL").replace(/\/$/, "");
     return {
       active: payload.result.url === `${appUrl}/api/telegram/webhook`,
       pending: payload.result.pending_update_count ?? 0,
