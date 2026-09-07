@@ -1,4 +1,6 @@
 import { formatCurrent } from "./bot-router";
+import { festivalMapStartParam, getFestivalForChat } from "./festival-store";
+import { DEFAULT_FESTIVAL_ID, type FestivalDefinition } from "./festivals";
 import { formatSet, setsStartingWithin } from "./festival-time";
 import {
   getGroupMeetPoint,
@@ -31,8 +33,9 @@ function groupRoom(chat: TelegramChat): string {
   return `g_${privateRoomToken(chat.id)}`;
 }
 
-function groupMapUrl(chat: TelegramChat): string {
-  return mapMiniAppUrl(isGroupChat(chat) ? `room_${privateRoomToken(chat.id)}` : "map");
+function groupMapUrl(chat: TelegramChat, festival: FestivalDefinition): string {
+  const roomToken = isGroupChat(chat) ? privateRoomToken(chat.id) : undefined;
+  return mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
 }
 
 function displayTelegramUser(user: TelegramUser | undefined): string {
@@ -49,7 +52,7 @@ function commandFromText(text: string): string {
   return raw.split("@")[0].toLowerCase();
 }
 
-function companionInlineKeyboard(chat: TelegramChat) {
+function companionInlineKeyboard(chat: TelegramChat, festival: FestivalDefinition) {
   return {
     inline_keyboard: [
       [
@@ -61,7 +64,7 @@ function companionInlineKeyboard(chat: TelegramChat) {
         { text: "⛺ Tent", callback_data: `${MENU_PREFIX}tent` },
       ],
       [
-        { text: "🗺 Kaart", url: groupMapUrl(chat) },
+        { text: "🗺 Kaart", url: groupMapUrl(chat, festival) },
         { text: "👥 Groep", callback_data: `${MENU_PREFIX}group` },
       ],
     ],
@@ -69,20 +72,35 @@ function companionInlineKeyboard(chat: TelegramChat) {
 }
 
 async function showMenu(chat: TelegramChat): Promise<void> {
+  const festival = await getFestivalForChat(chat.id);
   const detail = isGroupChat(chat)
-    ? "Groepsacties blijven in deze chat en gebruiken dezelfde Space Safari-room."
+    ? `${festival.name} ${festival.year} · acties voor deze groep.`
     : "Open dit menu in jullie festivalgroep voor Meet, Tent en groepsstatus.";
-  await sendMessage(chat.id, `🪐 Space Companion\n${detail}`, {
-    reply_markup: companionInlineKeyboard(chat),
+  await sendMessage(chat.id, `📍 Ginder\n${detail}`, {
+    reply_markup: companionInlineKeyboard(chat, festival),
   });
 }
 
 async function showTimetable(chat: TelegramChat): Promise<void> {
+  const festival = await getFestivalForChat(chat.id);
+  if (festival.id !== DEFAULT_FESTIVAL_ID) {
+    await sendMessage(chat.id, `📅 De timetable voor ${festival.name} is nog niet ingesteld in Ginder.`);
+    return;
+  }
   const soon = setsStartingWithin(60).slice(0, 8);
   const extra = soon.length
     ? ["", "⏱ Binnen 60 min", ...soon.map((set) => formatSet(set))].join("\n")
     : "\n\n⏱ Binnen 60 minuten start geen nieuwe set.";
   await sendMessage(chat.id, `${formatCurrent()}${extra}`);
+}
+
+async function showLive(chat: TelegramChat): Promise<void> {
+  const festival = await getFestivalForChat(chat.id);
+  if (festival.id !== DEFAULT_FESTIVAL_ID) {
+    await sendMessage(chat.id, `🎵 Live timetable is nog niet ingesteld voor ${festival.name}.`);
+    return;
+  }
+  await sendMessage(chat.id, formatCurrent());
 }
 
 function shortAnchorKey(id: string): string {
@@ -94,8 +112,8 @@ function shortAnchorKey(id: string): string {
   return Math.abs(hash >>> 0).toString(36);
 }
 
-async function anchorFromShortKey(key: string) {
-  const anchors = await listAnchors();
+async function anchorFromShortKey(key: string, festivalId: string) {
+  const anchors = await listAnchors(festivalId);
   return anchors.find((anchor) => shortAnchorKey(anchor.id) === key);
 }
 
@@ -104,9 +122,10 @@ async function chooseMeetingPoint(chat: TelegramChat): Promise<void> {
     await sendMessage(chat.id, "📍 Meeting points horen bij een groep. Open /menu vanuit jullie festivalgroep.");
     return;
   }
-  const anchors = await listAnchors();
+  const festival = await getFestivalForChat(chat.id);
+  const anchors = await listAnchors(festival.id);
   if (!anchors.length) {
-    await sendMessage(chat.id, "Er zijn nog geen kaartankers om als meeting point te gebruiken.");
+    await sendMessage(chat.id, `Er zijn nog geen kaartankers voor ${festival.name}.`);
     return;
   }
   const rows: Array<Array<{ text: string; callback_data: string }>> = [];
@@ -119,8 +138,8 @@ async function chooseMeetingPoint(chat: TelegramChat): Promise<void> {
   await sendMessage(chat.id, "📍 Waar spreken we af?", { reply_markup: { inline_keyboard: rows } });
 }
 
-async function knownMemberMentions(room: string, creatorId: number): Promise<string> {
-  const members = (await listPresence(room)).filter((member) => member.userId !== creatorId).slice(0, 8);
+async function knownMemberMentions(room: string, creatorId: number, festivalId: string): Promise<string> {
+  const members = (await listPresence(room, festivalId)).filter((member) => member.userId !== creatorId).slice(0, 8);
   return members.map((member) => member.username
     ? `@${escapeHtml(member.username)}`
     : `<a href="tg://user?id=${member.userId}">${escapeHtml(member.displayName)}</a>`).join(" ");
@@ -132,17 +151,18 @@ async function saveTentFromCurrentLocation(chat: TelegramChat, user: TelegramUse
     return;
   }
   if (!user) return;
+  const festival = await getFestivalForChat(chat.id);
   const room = groupRoom(chat);
-  const current = (await listPresence(room)).find((member) => member.userId === user.id);
+  const current = (await listPresence(room, festival.id)).find((member) => member.userId === user.id);
   if (!current) {
     await sendMessage(chat.id, "⛺ Deel eerst je locatie op de groepskaart en tik daarna opnieuw op Tent.", {
-      reply_markup: { inline_keyboard: [[{ text: "🗺 Open groepskaart", url: groupMapUrl(chat) }]] },
+      reply_markup: { inline_keyboard: [[{ text: "🗺 Open groepskaart", url: groupMapUrl(chat, festival) }]] },
     });
     return;
   }
-  await saveGroupTentPoint(room, current);
+  await saveGroupTentPoint(room, current, festival.id);
   await sendMessage(chat.id, `⛺ Tentplek bijgewerkt voor ${displayTelegramUser(user)}.`, {
-    reply_markup: { inline_keyboard: [[{ text: "🗺 Toon tent op kaart", url: groupMapUrl(chat) }]] },
+    reply_markup: { inline_keyboard: [[{ text: "🗺 Toon tent op kaart", url: groupMapUrl(chat, festival) }]] },
   });
 }
 
@@ -151,24 +171,25 @@ async function showGroupSummary(chat: TelegramChat): Promise<void> {
     await sendMessage(chat.id, "👥 Open dit vanuit jullie festivalgroep voor groepsstatus.");
     return;
   }
+  const festival = await getFestivalForChat(chat.id);
   const room = groupRoom(chat);
   const [members, meet, tents] = await Promise.all([
-    listPresence(room),
-    getGroupMeetPoint(room),
-    listGroupTentPoints(room),
+    listPresence(room, festival.id),
+    getGroupMeetPoint(room, festival.id),
+    listGroupTentPoints(room, festival.id),
   ]);
-  const statuses = meet ? await getGroupMeetStatuses(room, meet.id) : [];
+  const statuses = meet ? await getGroupMeetStatuses(room, meet.id, festival.id) : [];
   const going = statuses.filter((status) => status.status === "going").length;
   const arrived = statuses.filter((status) => status.status === "arrived").length;
   const lines = [
-    "👥 GROEP",
+    `👥 ${festival.name.toUpperCase()}`,
     `${members.length} zichtbare locatie${members.length === 1 ? "" : "s"}`,
     meet ? `📍 Meet: ${meet.name} · door ${meet.createdByName}` : "📍 Geen actief meeting point",
     meet ? `🚶 ${going} onderweg · ✅ ${arrived} aangekomen` : null,
     tents.length ? `⛺ Tent: ${tents.map((tent) => tent.displayName).join(", ")}` : "⛺ Nog geen tentplek opgeslagen",
   ].filter((line): line is string => Boolean(line));
   await sendMessage(chat.id, lines.join("\n"), {
-    reply_markup: { inline_keyboard: [[{ text: "🗺 Open groepskaart", url: groupMapUrl(chat) }]] },
+    reply_markup: { inline_keyboard: [[{ text: "🗺 Open groepskaart", url: groupMapUrl(chat, festival) }]] },
   });
 }
 
@@ -183,7 +204,8 @@ async function setMeetingStatus(
     await answerCallbackQuery(callbackId, "Deze status hoort bij een groepsafspraak.");
     return;
   }
-  const saved = await setGroupMeetStatus(groupRoom(chat), meetId, user, status);
+  const festival = await getFestivalForChat(chat.id);
+  const saved = await setGroupMeetStatus(groupRoom(chat), meetId, user, status, festival.id);
   if (!saved) {
     await answerCallbackQuery(callbackId, "Deze afspraak is verlopen of vervangen.");
     return;
@@ -201,7 +223,8 @@ async function createMeetingFromAnchor(
     await answerCallbackQuery(callbackId, "Meeting points horen bij een groep.");
     return;
   }
-  const anchor = await anchorFromShortKey(anchorKey);
+  const festival = await getFestivalForChat(chat.id);
+  const anchor = await anchorFromShortKey(anchorKey, festival.id);
   if (!anchor) {
     await answerCallbackQuery(callbackId, "Meeting point niet gevonden.");
     return;
@@ -215,9 +238,9 @@ async function createMeetingFromAnchor(
     longitude: anchor.longitude,
     createdBy: user.id,
     createdByName: creatorName,
-  });
+  }, festival.id);
   await answerCallbackQuery(callbackId, `${anchor.name} ingesteld`);
-  const mentions = await knownMemberMentions(room, user.id);
+  const mentions = await knownMemberMentions(room, user.id, festival.id);
   await sendMessage(chat.id, [
     `📍 <b>Meeting point: ${escapeHtml(anchor.name)}</b>`,
     `door ${escapeHtml(creatorName)} · blijft 2 uur actief`,
@@ -230,9 +253,16 @@ async function createMeetingFromAnchor(
           { text: "🚶 Onderweg", callback_data: `${STATUS_PREFIX}${meet.id}:g` },
           { text: "✅ Aangekomen", callback_data: `${STATUS_PREFIX}${meet.id}:a` },
         ],
-        [{ text: "🗺 Open op kaart", url: groupMapUrl(chat) }],
+        [{ text: "🗺 Open op kaart", url: groupMapUrl(chat, festival) }],
       ],
     },
+  });
+}
+
+async function sendMapLink(chat: TelegramChat): Promise<void> {
+  const festival = await getFestivalForChat(chat.id);
+  await sendMessage(chat.id, `🗺 ${festival.name} kaart`, {
+    reply_markup: { inline_keyboard: [[{ text: "🗺 Open kaart", url: groupMapUrl(chat, festival) }]] },
   });
 }
 
@@ -243,7 +273,7 @@ async function handleMenuCallback(action: string, chat: TelegramChat, user: Tele
       await showTimetable(chat);
       return;
     case "live":
-      await sendMessage(chat.id, formatCurrent());
+      await showLive(chat);
       return;
     case "meet":
       await chooseMeetingPoint(chat);
@@ -293,7 +323,7 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
     return true;
   }
   if (command === "/live" || raw === "🎵 Nu live") {
-    await sendMessage(message.chat.id, formatCurrent());
+    await showLive(message.chat);
     return true;
   }
   if (command === "/meet" || raw === "📍 Meet") {
@@ -307,6 +337,18 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
   if (command === "/group" || raw === "👥 Groep") {
     await showGroupSummary(message.chat);
     return true;
+  }
+  if (command === "/map" || raw === "🗺 Kaart") {
+    await sendMapLink(message.chat);
+    return true;
+  }
+
+  if (isGroupChat(message.chat) && ["/wie", "/straks", "/programma", "/ping", "/pings", "/unping"].includes(command)) {
+    const festival = await getFestivalForChat(message.chat.id);
+    if (festival.id !== DEFAULT_FESTIVAL_ID) {
+      await sendMessage(message.chat.id, `📅 De timetable voor ${festival.name} is nog niet ingesteld in Ginder.`);
+      return true;
+    }
   }
 
   return false;
