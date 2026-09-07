@@ -9,7 +9,7 @@ function fixture() {
   const ping: ArtistPing = { chatId: "123", artistSetId: set.id, notifyAt: "2026-09-05T23:45:00+02:00", createdAt: "2026-09-05T12:00:00+02:00" };
   let stored: ArtistPing | null = ping;
   let locked = false;
-  const send = vi.fn(async () => undefined);
+  const send = vi.fn(async (_chatId: string, _text: string) => undefined);
   const deps: NotificationDeliveryDeps = {
     getPing: async () => stored,
     setById: () => set,
@@ -61,7 +61,7 @@ describe("notification delivery idempotency", () => {
     const getPing = vi.fn(async () => ping);
     const setById = vi.fn(async () => set);
     const setLock = vi.fn(async () => true);
-    const send = vi.fn(async () => undefined);
+    const send = vi.fn(async (_chatId: string, _text: string) => undefined);
     const deps: NotificationDeliveryDeps = {
       getPing,
       setById,
