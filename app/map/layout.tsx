@@ -4,45 +4,45 @@ export default function MapLayout({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{`
-        /* Keep the calibrated artwork untouched. Empty map space uses the
+        /* Keep calibrated festival artwork untouched. Empty map space uses the
            artwork edge tone instead of a blurred/cropped duplicate. */
-        div:has(> [aria-label="GPS-uitgelijnde Space Safari festivalkaart"]) {
+        div:has(> [aria-label$="festivalkaart" i]) {
           position: relative;
           isolation: isolate;
           overflow: hidden;
           background: #251225;
         }
 
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] {
+        [aria-label$="festivalkaart" i] {
           z-index: 1;
           isolation: isolate;
           overflow: hidden;
           background: #251225 !important;
         }
 
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas,
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas-container {
+        [aria-label$="festivalkaart" i] .maplibregl-canvas,
+        [aria-label$="festivalkaart" i] .maplibregl-canvas-container {
           background: transparent !important;
         }
 
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas {
+        [aria-label$="festivalkaart" i] .maplibregl-canvas {
           opacity: 0;
         }
 
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] > img {
+        [aria-label$="festivalkaart" i] > img {
           z-index: 1 !important;
         }
 
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-marker,
-        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-control-container {
+        [aria-label$="festivalkaart" i] .maplibregl-marker,
+        [aria-label$="festivalkaart" i] .maplibregl-control-container {
           z-index: 3;
         }
 
         [data-map-special="meet"] {
-          animation: ssMeetAttention 1.9s ease-in-out infinite;
+          animation: ginderMeetAttention 1.9s ease-in-out infinite;
         }
 
-        @keyframes ssMeetAttention {
+        @keyframes ginderMeetAttention {
           50% { filter: drop-shadow(0 0 9px rgba(243, 107, 23, .62)); }
         }
 
