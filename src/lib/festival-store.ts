@@ -39,6 +39,10 @@ function pendingKey(userId: number): string {
   return `ginder:festival:pending:${userId}`;
 }
 
+function namePromptKey(userId: number): string {
+  return `ginder:festival:name-prompt:${userId}`;
+}
+
 function cooldownKey(userId: number): string {
   return `ginder:festival:create-cooldown:${userId}`;
 }
@@ -102,6 +106,18 @@ export async function requireResolvedFestivalDefinition(selector?: string | null
   const festival = await resolveFestivalDefinition(selector);
   if (!festival) throw new Error("Onbekend festival.");
   return festival;
+}
+
+export async function beginFestivalNamePrompt(ownerTelegramId: number): Promise<void> {
+  await getRedis().set(namePromptKey(ownerTelegramId), "1", { ex: 15 * 60 });
+}
+
+export async function consumeFestivalNamePrompt(ownerTelegramId: number): Promise<boolean> {
+  const redis = getRedis();
+  const exists = await redis.get<string>(namePromptKey(ownerTelegramId));
+  if (!exists) return false;
+  await redis.del(namePromptKey(ownerTelegramId));
+  return true;
 }
 
 export async function createPendingFestival(
