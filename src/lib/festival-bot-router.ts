@@ -9,6 +9,7 @@ import {
   getCreationCooldownSeconds,
   getCurrentFestivalForOwner,
   getPendingFestival,
+  issueFestivalSetupToken,
   releaseCreationSlot,
   setupUrl,
   updatePersistedFestival,
@@ -47,6 +48,16 @@ function cooldownText(seconds: number): string {
   if (hours < 24) return `${hours} uur`;
   const days = Math.ceil(hours / 24);
   return `${days} dag${days === 1 ? "" : "en"}`;
+}
+
+function statusText(festival: PersistedFestival): string {
+  switch (festival.status) {
+    case "map": return "Kaart + terrein nog instellen";
+    case "anchors": return "Kaart ontvangen · terrein + ankers nog afwerken";
+    case "timetable": return "Kaart + ankers klaar · timetable nog instellen";
+    case "ready": return "Klaar voor gebruik";
+    default: return "Setup nog niet gestart";
+  }
 }
 
 function adminRights() {
@@ -99,6 +110,39 @@ async function askForGroup(chatId: number, pending: PendingFestivalCreation): Pr
       },
     },
   );
+}
+
+async function showCurrentFestival(message: TelegramMessage): Promise<boolean> {
+  const userId = message.from?.id;
+  if (!userId || !isPrivate(message.chat)) return false;
+  const current = await getCurrentFestivalForOwner(userId);
+  if (!current) return false;
+
+  const { festival, setupToken } = await issueFestivalSetupToken(current.id);
+  const configUrl = setupUrl(festival, setupToken);
+  const roomToken = festival.chatId === null ? undefined : privateRoomToken(festival.chatId);
+  const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
+  const cooldown = await getCreationCooldownSeconds(userId);
+  const rows: Array<Array<{ text: string; url: string }>> = [
+    [{ text: festival.status === "ready" ? "⚙️ Festival beheren" : "⚙️ Setup verderzetten", url: configUrl }],
+  ];
+  if (festival.mapImageUrl) rows.push([{ text: "🗺 Open kaart", url: mapUrl }]);
+  if (festival.inviteLink) rows.push([{ text: "👥 Open festivalgroep", url: festival.inviteLink }]);
+
+  const newFestivalLine = cooldown > 0
+    ? `Nieuw festival: nog ongeveer ${cooldownText(cooldown)} wachten.`
+    : "Nog eentje maken? /festival nieuw <naam> <jaar>";
+
+  await sendMessage(message.chat.id, [
+    `📍 ${festival.name} ${festival.year}`,
+    statusText(festival),
+    festival.chatTitle ? `Groep: ${festival.chatTitle}` : null,
+    "",
+    newFestivalLine,
+  ].filter((line): line is string => Boolean(line)).join("\n"), {
+    reply_markup: { inline_keyboard: rows },
+  });
+  return true;
 }
 
 async function startFestivalCreation(message: TelegramMessage, rawName: string): Promise<void> {
@@ -243,17 +287,21 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
   if (!appUrl) throw new Error("APP_URL is not configured");
 
-  await updatePersistedFestival(festival.id, {
+  const updated = await updatePersistedFestival(festival.id, {
     telegramMapFileId: fileId,
     mapImageUrl: `${appUrl}/api/festivals/${encodeURIComponent(festival.id)}/map-image`,
     mapImageWidth: largestPhoto?.width ?? festival.mapImageWidth,
     mapImageHeight: largestPhoto?.height ?? festival.mapImageHeight,
     status: "anchors",
   });
+  const { festival: resumable, setupToken } = await issueFestivalSetupToken(updated.id);
+  const configUrl = setupUrl(resumable, setupToken);
   await sendMessage(message.chat.id, [
-    `✅ Kaart ontvangen voor ${festival.name}.`,
-    "Open nu de setup-link die ik in je festivalgroep heb gezet om terrein + ankers af te werken.",
-  ].join("\n"));
+    `✅ Kaart ontvangen voor ${resumable.name}.`,
+    "Nu terrein + ankers afwerken.",
+  ].join("\n"), {
+    reply_markup: { inline_keyboard: [[{ text: "⚙️ Festival instellen", url: configUrl }]] },
+  });
   return true;
 }
 
@@ -271,16 +319,36 @@ export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Prom
 
   const { command, args } = commandAndArgs(message.text);
   if (command === "/festival") {
-    if (args.toLowerCase() === "cancel") {
+    const normalizedArgs = args.toLowerCase();
+    if (normalizedArgs === "cancel") {
       await clearPendingFestival(message.from.id);
       await sendMessage(message.chat.id, "Festivalsetup geannuleerd.", { reply_markup: { remove_keyboard: true } });
       return true;
     }
+
+    if (!isPrivate(message.chat)) {
+      await startFestivalCreation(message, args);
+      return true;
+    }
+
+    if (!args || ["status", "setup", "beheer", "manage"].includes(normalizedArgs)) {
+      if (await showCurrentFestival(message)) return true;
+      await startFestivalCreation(message, "");
+      return true;
+    }
+
+    if (normalizedArgs === "nieuw" || normalizedArgs.startsWith("nieuw ")) {
+      await startFestivalCreation(message, args.slice("nieuw".length).trim());
+      return true;
+    }
+
+    // Backwards compatible: /festival Horst 2027 still starts a new festival.
     await startFestivalCreation(message, args);
     return true;
   }
 
   if (command === "/start" && args.toLowerCase() === "festival") {
+    if (await showCurrentFestival(message)) return true;
     await startFestivalCreation(message, "");
     return true;
   }
