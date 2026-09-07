@@ -40,6 +40,7 @@ export async function POST(request: Request) {
       longitude: member.longitude,
       mapX: member.mapX,
       mapY: member.mapY,
+      simulated: member.simulated ?? false,
     }));
 
     return NextResponse.json({
