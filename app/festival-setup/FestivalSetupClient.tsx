@@ -102,7 +102,7 @@ export default function FestivalSetupClient() {
     if (latitude === null || longitude === null || maxDistance === null) return null;
     return {
       version: 1,
-      id: connectedFestivalId ?? slugify(name) || "festival",
+      id: connectedFestivalId ?? (slugify(name) || "festival"),
       name: name.trim() || "Festival",
       year,
       mapImageUrl: mapImageUrl.trim(),
