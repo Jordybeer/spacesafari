@@ -45,12 +45,15 @@ export async function POST(request: Request) {
     await telegram("setMyCommands", {
       commands: [
         { command: "start", description: "Open Space Safari Assistant" },
+        { command: "menu", description: "Toon het festivalmenu" },
         { command: "wie", description: "Wie draait er nu?" },
         { command: "straks", description: "Sets die binnen 60 min starten" },
         { command: "programma", description: "Zoek een artiest" },
         { command: "ping", description: "Melding 15 min voor een artiest" },
         { command: "pings", description: "Mijn actieve meldingen" },
         { command: "unping", description: "Verwijder een melding" },
+        { command: "meet", description: "Maak een groepsafspraak" },
+        { command: "tent", description: "Bewaar je huidige tentplek" },
         { command: "map", description: "Festivalkaart + live kaart" },
         { command: "id", description: "Toon mijn Telegram user ID" },
         { command: "help", description: "Toon alle commando's" },
