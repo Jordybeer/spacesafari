@@ -10,17 +10,24 @@ export default function MapLayout({ children }: { children: ReactNode }) {
           background: #211120;
         }
 
+        /* Visual edge extension only. The calibrated artwork above remains
+           untouched, so no festival-map content or anchor geometry is cropped. */
         [aria-label="GPS-uitgelijnde Space Safari festivalkaart"]::before {
           content: "";
           position: absolute;
-          inset: -28px;
+          inset: -44px;
           z-index: 0;
           pointer-events: none;
           background: #211120 url('/festival-map-original.png?v=1') center / cover no-repeat;
-          filter: blur(18px) saturate(.82) brightness(.58);
-          transform: scale(1.08);
+          filter: blur(9px) saturate(.96) brightness(.84);
+          transform: scale(1.16);
           transform-origin: center;
-          opacity: .92;
+          opacity: 1;
+        }
+
+        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas,
+        [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas-container {
+          background: transparent !important;
         }
 
         [aria-label="GPS-uitgelijnde Space Safari festivalkaart"] .maplibregl-canvas {
