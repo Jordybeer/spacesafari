@@ -16,7 +16,7 @@ const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
-  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "#211120" } }],
+  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "rgba(33, 17, 32, 0)" } }],
 };
 
 export interface GeoMember {
@@ -379,9 +379,8 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
   return (
     <div className={styles.geoMapWrap}>
-      <div ref={containerRef} className={styles.geoMap} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
-
-      {!corners && <div className={mapUi.staticFestivalFallback} aria-hidden="true" />}
+      <div className={mapUi.staticFestivalFallback} style={{ zIndex: 0 }} aria-hidden="true" />
+      <div ref={containerRef} className={styles.geoMap} style={{ zIndex: 1 }} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
 
       {mapReady && (
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
