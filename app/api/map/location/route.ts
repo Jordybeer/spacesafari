@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { MAX_PRESENCE_TTL_SECONDS, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
-import { isNearVenue } from "@/src/lib/venue";
+import { isNearFestival } from "@/src/lib/venue";
 import { isRedisConfigured } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
@@ -18,6 +19,7 @@ const AuthFields = {
   initData: z.string().min(1).optional(),
   roomToken: z.string().optional(),
   mode: z.enum(["group", "public"]),
+  festivalId: z.string().trim().min(1).max(64).optional().default(DEFAULT_FESTIVAL_ID),
 };
 
 const RequestSchema = z.discriminatedUnion("action", [
@@ -36,6 +38,7 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
+    const festival = requireFestivalDefinition(input.festivalId);
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = requireMapAuth(request, input.initData, roomToken);
     const room = roomFor(data, input.mode);
@@ -48,15 +51,15 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "stop") {
-      await stopPresence(room, data.user.id);
+      await stopPresence(room, data.user.id, festival.id);
       return NextResponse.json({ ok: true });
     }
 
-    if (!isNearVenue(input.location)) {
-      return NextResponse.json({ error: "Locatie ligt buiten het Space Safari-terrein." }, { status: 422 });
+    if (!isNearFestival(festival, input.location)) {
+      return NextResponse.json({ error: `Locatie ligt buiten het ${festival.name}-terrein.` }, { status: 422 });
     }
-    await putPresence(room, data.user, input.location, input.ttlSeconds);
-    return NextResponse.json({ ok: true, updatedAt: new Date().toISOString() });
+    await putPresence(room, data.user, input.location, input.ttlSeconds, { festivalId: festival.id });
+    return NextResponse.json({ ok: true, festivalId: festival.id, updatedAt: new Date().toISOString() });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
     return NextResponse.json({ error: message }, { status: 400 });
