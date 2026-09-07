@@ -1,9 +1,10 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { deleteAnchor, isMapAdmin, listAnchors, saveAnchor } from "@/src/lib/map-model";
-import { isNearVenue } from "@/src/lib/venue";
+import { isNearFestival } from "@/src/lib/venue";
 import { isRedisConfigured } from "@/src/lib/storage";
 
 export const runtime = "nodejs";
@@ -12,6 +13,7 @@ export const dynamic = "force-dynamic";
 const BaseSchema = z.object({
   initData: z.string().min(1).optional(),
   roomToken: z.string().optional(),
+  festivalId: z.string().trim().min(1).max(64).optional().default(DEFAULT_FESTIVAL_ID),
 });
 const RequestSchema = z.discriminatedUnion("action", [
   BaseSchema.extend({ action: z.literal("list") }),
@@ -30,6 +32,7 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
+    const festival = requireFestivalDefinition(input.festivalId);
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
 
     if (!isMapAdmin(data.user.id)) {
@@ -44,17 +47,17 @@ export async function POST(request: Request) {
     }
 
     if (input.action === "list") {
-      const anchors = await listAnchors();
-      return NextResponse.json({ anchors, admin: true });
+      const anchors = await listAnchors(festival.id);
+      return NextResponse.json({ festivalId: festival.id, anchors, admin: true });
     }
 
     if (input.action === "delete") {
-      await deleteAnchor(input.id);
-      return NextResponse.json({ ok: true });
+      await deleteAnchor(input.id, festival.id);
+      return NextResponse.json({ ok: true, festivalId: festival.id });
     }
 
-    if (!isNearVenue(input)) {
-      return NextResponse.json({ error: "Kalibratiepunt ligt buiten het festivalterrein." }, { status: 422 });
+    if (!isNearFestival(festival, input)) {
+      return NextResponse.json({ error: `Kalibratiepunt ligt buiten het ${festival.name}-terrein.` }, { status: 422 });
     }
 
     const id = `${input.name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "anchor"}-${crypto.randomUUID().slice(0, 8)}`;
@@ -68,8 +71,8 @@ export async function POST(request: Request) {
       mapY: input.mapY,
       createdBy: data.user.id,
       createdAt: new Date().toISOString(),
-    });
-    return NextResponse.json({ ok: true, id });
+    }, festival.id);
+    return NextResponse.json({ ok: true, festivalId: festival.id, id });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
     return NextResponse.json({ error: message }, { status: 400 });
