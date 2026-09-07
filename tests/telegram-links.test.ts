@@ -33,6 +33,6 @@ describe("mapMiniAppUrl", () => {
     delete process.env.TELEGRAM_BOT_USERNAME;
     delete process.env.TELEGRAM_MINI_APP_SHORT_NAME;
 
-    expect(mapMiniAppUrl("map")).toBe("https://spacesafari.jordy.beer/map?startapp=map");
+    expect(mapMiniAppUrl("map")).toBe("https://ginder.jordy.beer/map?startapp=map");
   });
 });
