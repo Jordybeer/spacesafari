@@ -35,8 +35,12 @@ export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
-    const launchFestival = parseFestivalStartParam(data.startParam).selector;
-    const festival = await requireResolvedFestivalDefinition(input.festivalId ?? launchFestival ?? DEFAULT_FESTIVAL_ID);
+    const launchFestival = data.source === "miniapp"
+      ? parseFestivalStartParam(data.startParam).selector
+      : null;
+    const festival = await requireResolvedFestivalDefinition(
+      launchFestival ?? input.festivalId ?? DEFAULT_FESTIVAL_ID,
+    );
 
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
