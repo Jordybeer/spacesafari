@@ -12,6 +12,7 @@ import { getRedis } from "./storage";
 
 const FESTIVALS_KEY = "ginder:festivals";
 const PENDING_TTL_SECONDS = 24 * 60 * 60;
+const MAX_ADDITIONAL_SETUP_TOKENS = 5;
 export const FESTIVAL_CREATION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
 
 export interface PersistedFestival extends FestivalDefinition {
@@ -23,6 +24,7 @@ export interface PersistedFestival extends FestivalDefinition {
   chatTitle: string | null;
   inviteLink: string | null;
   setupTokenHash: string;
+  setupTokenHashes?: string[];
   telegramMapFileId: string | null;
 }
 
@@ -216,9 +218,32 @@ export async function getCurrentFestivalForOwner(ownerTelegramId: number): Promi
   return id ? await getPersistedFestival(id) : null;
 }
 
+export async function issueFestivalSetupToken(
+  festivalId: string,
+): Promise<{ festival: PersistedFestival; setupToken: string }> {
+  const current = await getPersistedFestival(festivalId);
+  if (!current) throw new Error("Festival niet gevonden.");
+
+  const setupToken = randomToken();
+  const nextHash = tokenHash(setupToken);
+  const setupTokenHashes = [...new Set([...(current.setupTokenHashes ?? []), nextHash])]
+    .slice(-MAX_ADDITIONAL_SETUP_TOKENS);
+  const festival: PersistedFestival = {
+    ...current,
+    setupTokenHashes,
+    updatedAt: new Date().toISOString(),
+  };
+  await getRedis().hset(FESTIVALS_KEY, { [festival.id]: festival });
+  return { festival, setupToken };
+}
+
 export async function verifyFestivalSetupToken(festivalId: string, token: string): Promise<PersistedFestival> {
   const festival = await getPersistedFestival(festivalId);
-  if (!festival || !token || festival.setupTokenHash !== tokenHash(token)) {
+  const hash = token ? tokenHash(token) : "";
+  const valid = Boolean(festival && hash && (
+    festival.setupTokenHash === hash || festival.setupTokenHashes?.includes(hash)
+  ));
+  if (!festival || !valid) {
     throw new Error("Ongeldige festival setup-link.");
   }
   return festival;
