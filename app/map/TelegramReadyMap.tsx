@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import AdminSpoofControl from "./AdminSpoofControl";
 import MapClientV3 from "./MapClientV3";
 
 type TelegramWindow = Window & {
@@ -50,5 +51,10 @@ export default function TelegramReadyMap() {
     );
   }
 
-  return <MapClientV3 />;
+  return (
+    <>
+      <MapClientV3 />
+      <AdminSpoofControl />
+    </>
+  );
 }
