@@ -8,7 +8,7 @@ import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
 const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const FESTIVAL_IMAGE_URL = "/festival-map.jpg?v=6";
+const FESTIVAL_IMAGE_URL = "/festival-map-original.png?v=4";
 const FESTIVAL_IMAGE_WIDTH = 640;
 const FESTIVAL_IMAGE_HEIGHT = 800;
 const LIVE_LOCATION_MS = 75_000;
@@ -16,8 +16,10 @@ const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
-  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "#211120" } }],
+  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "#251225" } }],
 };
+
+export type MeetStatus = "going" | "arrived";
 
 export interface GeoMember {
   userId: number;
@@ -30,6 +32,28 @@ export interface GeoMember {
   mapX: number | null;
   mapY: number | null;
   simulated?: boolean;
+  meetStatus?: MeetStatus | null;
+}
+
+export interface GeoMeetPoint {
+  id: string;
+  name: string;
+  latitude: number;
+  longitude: number;
+  createdByName: string;
+  createdAt: string;
+  expiresAt: string;
+  goingCount: number;
+  arrivedCount: number;
+}
+
+export interface GeoTentPoint {
+  userId: number;
+  displayName: string;
+  username: string | null;
+  latitude: number;
+  longitude: number;
+  createdAt: string;
 }
 
 interface LocationFix {
@@ -41,6 +65,8 @@ interface LocationFix {
 interface FestivalGeoMapProps {
   anchors: GeoAnchor[];
   members: GeoMember[];
+  meet: GeoMeetPoint | null;
+  tents: GeoTentPoint[];
   ownUserId?: number;
   ownFix: LocationFix | null;
   showNames: boolean;
@@ -127,11 +153,40 @@ function attachPresenceTooltip(root: HTMLDivElement, text: string, live: boolean
   root.addEventListener("blur", () => setOpen(false));
 }
 
+function appendMeetingStatusDot(root: HTMLDivElement, status: MeetStatus): void {
+  const dot = document.createElement("span");
+  dot.setAttribute("aria-hidden", "true");
+  dot.title = status === "arrived" ? "Aangekomen" : "Onderweg";
+  dot.textContent = status === "arrived" ? "✓" : "→";
+  Object.assign(dot.style, {
+    position: "absolute",
+    left: "-4px",
+    bottom: "-4px",
+    zIndex: "5",
+    width: "15px",
+    height: "15px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "50%",
+    border: "2px solid #211120",
+    background: status === "arrived" ? "#63d98b" : "#f3a14a",
+    color: "#211120",
+    fontSize: "9px",
+    fontWeight: "1000",
+    lineHeight: "1",
+    boxShadow: status === "arrived" ? "0 0 9px rgba(99,217,139,.65)" : "0 0 9px rgba(243,161,74,.52)",
+    pointerEvents: "none",
+  });
+  root.appendChild(dot);
+}
+
 function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolean, nowMs: number): HTMLDivElement {
   const elapsedMs = ageMs(member.updatedAt, nowMs);
   const live = Boolean(member.simulated) || elapsedMs <= LIVE_LOCATION_MS;
   const name = memberName(member, isMe);
-  const statusText = member.simulated ? "testlocatie" : live ? "live" : formatLastSeen(elapsedMs);
+  const presenceText = member.simulated ? "testlocatie" : live ? "live" : formatLastSeen(elapsedMs);
+  const meetText = member.meetStatus === "arrived" ? " · aangekomen" : member.meetStatus === "going" ? " · onderweg" : "";
+  const statusText = `${presenceText}${meetText}`;
 
   const root = document.createElement("div");
   root.className = [
@@ -161,6 +216,7 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
   presenceDot.setAttribute("aria-hidden", "true");
   root.appendChild(presenceDot);
 
+  if (member.meetStatus) appendMeetingStatusDot(root, member.meetStatus);
   attachPresenceTooltip(root, showNames ? statusText : `${name} · ${statusText}`, live);
 
   if (showNames) {
@@ -169,6 +225,48 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
     label.textContent = name;
     root.appendChild(label);
   }
+  return root;
+}
+
+function createSpecialMarkerElement(kind: "meet" | "tent", label: string, detail: string): HTMLDivElement {
+  const root = document.createElement("div");
+  root.dataset.mapSpecial = kind;
+  root.title = detail;
+  root.setAttribute("aria-label", detail);
+  root.style.position = "relative";
+  root.style.display = "grid";
+  root.style.placeItems = "center";
+  root.style.zIndex = kind === "meet" ? "4" : "3";
+
+  const bubble = document.createElement("div");
+  bubble.dataset.specialBubble = "true";
+  bubble.textContent = kind === "meet" ? "📍" : "⛺";
+  Object.assign(bubble.style, {
+    width: kind === "meet" ? "42px" : "36px",
+    height: kind === "meet" ? "42px" : "36px",
+    display: "grid",
+    placeItems: "center",
+    borderRadius: "50% 50% 50% 10%",
+    transform: "rotate(-45deg)",
+    border: kind === "meet" ? "2px solid #ffe1c9" : "2px solid #f8e8d1",
+    background: kind === "meet" ? "#f36b17" : "#5a352d",
+    boxShadow: kind === "meet" ? "0 0 0 6px rgba(243,107,23,.18), 0 6px 18px rgba(0,0,0,.42)" : "0 5px 15px rgba(0,0,0,.4)",
+  });
+  const emoji = document.createElement("span");
+  emoji.textContent = bubble.textContent;
+  emoji.style.transform = "rotate(45deg)";
+  emoji.style.fontSize = kind === "meet" ? "20px" : "17px";
+  bubble.textContent = "";
+  bubble.appendChild(emoji);
+  root.appendChild(bubble);
+
+  const text = document.createElement("span");
+  text.className = `${styles.geoLabel} ${styles.geoLabelLive}`;
+  text.textContent = label;
+  text.style.top = "calc(100% + 6px)";
+  text.style.background = kind === "meet" ? "rgba(94,43,20,.96)" : "rgba(65,38,31,.96)";
+  text.style.borderColor = kind === "meet" ? "rgba(243,107,23,.55)" : "rgba(248,232,209,.28)";
+  root.appendChild(text);
   return root;
 }
 
@@ -234,12 +332,13 @@ function positionFestivalArtwork(map: MapLibreMap, image: HTMLImageElement, corn
   image.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${topLeft.x}, ${topLeft.y})`;
 }
 
-export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
+export default function FestivalGeoMap({ anchors, members, meet, tents, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const maplibreRef = useRef<typeof import("maplibre-gl") | null>(null);
   const artworkRef = useRef<HTMLImageElement | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
+  const specialMarkersRef = useRef<MapLibreMarker[]>([]);
   const ownFallbackMarkerRef = useRef<MapLibreMarker | null>(null);
   const lastAutoFitKeyRef = useRef("");
   const [mapReady, setMapReady] = useState(false);
@@ -286,10 +385,12 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     return () => {
       cancelled = true;
       markersRef.current.forEach((marker) => marker.remove());
+      specialMarkersRef.current.forEach((marker) => marker.remove());
       ownFallbackMarkerRef.current?.remove();
       artworkRef.current?.remove();
       artworkRef.current = null;
       markersRef.current = [];
+      specialMarkersRef.current = [];
       ownFallbackMarkerRef.current = null;
       mapRef.current?.remove();
       mapRef.current = null;
@@ -344,6 +445,35 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
       markersRef.current = [];
     };
   }, [mapReady, members, ownUserId, presenceNow, showNames]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const maplibre = maplibreRef.current;
+    if (!map || !maplibre || !mapReady) return;
+
+    specialMarkersRef.current.forEach((marker) => marker.remove());
+    const next: MapLibreMarker[] = [];
+    if (meet && validPoint(meet)) {
+      const detail = `${meet.name} · ${meet.goingCount} onderweg · ${meet.arrivedCount} aangekomen · door ${meet.createdByName}`;
+      next.push(new maplibre.Marker({
+        element: createSpecialMarkerElement("meet", `Meet · ${meet.name}`, detail),
+        anchor: "bottom",
+      }).setLngLat([meet.longitude, meet.latitude]).addTo(map));
+    }
+    tents.filter(validPoint).forEach((tent) => {
+      const who = tent.username ? `@${tent.username}` : tent.displayName;
+      next.push(new maplibre.Marker({
+        element: createSpecialMarkerElement("tent", `Tent · ${who}`, `Tentplek van ${who}`),
+        anchor: "bottom",
+      }).setLngLat([tent.longitude, tent.latitude]).addTo(map));
+    });
+    specialMarkersRef.current = next;
+
+    return () => {
+      specialMarkersRef.current.forEach((marker) => marker.remove());
+      specialMarkersRef.current = [];
+    };
+  }, [mapReady, meet, tents]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -407,6 +537,12 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
     map.easeTo({ center: [point.longitude, point.latitude], zoom: Math.max(map.getZoom(), 18), duration: 350 });
   };
 
+  const focusMeet = () => {
+    const map = mapRef.current;
+    if (!map || !meet || !validPoint(meet)) return;
+    map.easeTo({ center: [meet.longitude, meet.latitude], zoom: Math.max(map.getZoom(), 18.2), duration: 350 });
+  };
+
   const fitPeople = () => {
     const map = mapRef.current;
     const maplibre = maplibreRef.current;
@@ -433,6 +569,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
           <button type="button" onClick={fitFestival} disabled={!corners} aria-label="Toon volledige festivalkaart" title="Toon volledige festivalkaart">🗺️</button>
           <button type="button" onClick={focusSelf} disabled={!canFocusSelf} aria-label="Centreer op mij" title="Centreer op mij">⌖</button>
+          {meet && <button type="button" onClick={focusMeet} aria-label="Ga naar meeting point" title="Ga naar meeting point">📍</button>}
           <button type="button" onClick={fitPeople} disabled={!canFitPeople} aria-label="Toon iedereen" title="Toon iedereen">👥</button>
         </div>
       )}
