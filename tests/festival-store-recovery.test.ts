@@ -1,5 +1,6 @@
 import crypto from "node:crypto";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { SPACE_SAFARI_2026 } from "@/src/lib/festivals";
 
 const state = vi.hoisted(() => ({
   hashes: new Map<string, Map<string, unknown>>(),
@@ -19,6 +20,7 @@ vi.mock("@/src/lib/storage", () => ({
 
 import {
   getPersistedFestival,
+  isFestivalOwner,
   issueFestivalSetupToken,
   verifyFestivalSetupToken,
   type PersistedFestival,
@@ -86,5 +88,14 @@ describe("festival setup link recovery", () => {
 
   it("rejects an unrelated token", async () => {
     await expect(verifyFestivalSetupToken(festivalId, "definitely-not-valid-token")).rejects.toThrow("Ongeldige festival setup-link");
+  });
+});
+
+describe("festival owner map administration", () => {
+  it("recognizes only the owner of a persisted custom festival", () => {
+    const festival = fixture();
+    expect(isFestivalOwner(festival, 42)).toBe(true);
+    expect(isFestivalOwner(festival, 43)).toBe(false);
+    expect(isFestivalOwner(SPACE_SAFARI_2026, 42)).toBe(false);
   });
 });
