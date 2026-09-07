@@ -9,7 +9,7 @@ export default function HomePage() {
           <span className={styles.pin} aria-hidden="true" />
         </div>
 
-        <p className={styles.intro}>Kies uw festival.</p>
+        <p className={styles.intro}>Kies je festival.</p>
 
         <section className={styles.festival} aria-label="Festivals">
           <div>
