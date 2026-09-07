@@ -60,6 +60,25 @@ describe("artist pings", () => {
     expect(await listPings("42")).toHaveLength(1);
   });
 
+  it("keeps identical chat/set ids isolated across custom festivals", async () => {
+    const set = { id: "same-set", startsAt: "2027-07-10T20:00:00+02:00" };
+    const firstFestival = "festival-a-2027";
+    const secondFestival = "festival-b-2027";
+
+    const a = await createPing("42", set, firstFestival, "Europe/Brussels");
+    const b = await createPing("42", set, secondFestival, "Europe/Brussels");
+
+    expect(a.duplicate).toBe(false);
+    expect(b.duplicate).toBe(false);
+    expect(a.ping.festivalId).toBe(firstFestival);
+    expect(b.ping.festivalId).toBe(secondFestival);
+    expect(await listPings("42", firstFestival)).toHaveLength(1);
+    expect(await listPings("42", secondFestival)).toHaveLength(1);
+    expect(state.published).toHaveLength(2);
+    expect(state.published[0]).toMatchObject({ payload: { festivalId: firstFestival } });
+    expect(state.published[1]).toMatchObject({ payload: { festivalId: secondFestival } });
+  });
+
   it("deletes a ping", async () => {
     const set = performerSets.find((item) => item.artist === "Sevenum Six")!;
     await createPing("42", set);

@@ -1,21 +1,23 @@
 import { handleCallback } from "@vercel/queue";
 import { deliverPingNotification } from "@/src/lib/notification-delivery";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { enqueuePingReminder, secondsUntil, type PingReminderMessage } from "@/src/lib/ping-queue";
 import { getPing } from "@/src/lib/pings";
 
 export const POST = handleCallback(
   async (message: PingReminderMessage) => {
-    const ping = await getPing(message.chatId, message.artistSetId);
+    const festivalId = message.festivalId ?? DEFAULT_FESTIVAL_ID;
+    const ping = await getPing(message.chatId, message.artistSetId, festivalId);
 
     // Deleted, already delivered, or superseded reminders are safe no-ops.
     if (!ping || ping.sentAt || ping.createdAt !== message.createdAt) return;
 
-    // Vercel Queues can delay a single message for up to seven days. If a
-    // future edition ever schedules farther ahead, hop forward durably.
+    // Hop forward durably when the target is farther away than one queue delay.
     if (secondsUntil(ping.notifyAt) > 2) {
       await enqueuePingReminder({
         chatId: ping.chatId,
         artistSetId: ping.artistSetId,
+        festivalId,
         createdAt: ping.createdAt,
         notifyAt: ping.notifyAt,
         hop: message.hop + 1,
@@ -23,7 +25,7 @@ export const POST = handleCallback(
       return;
     }
 
-    await deliverPingNotification(message.chatId, message.artistSetId);
+    await deliverPingNotification(message.chatId, message.artistSetId, festivalId);
   },
   {
     visibilityTimeoutSeconds: 60,

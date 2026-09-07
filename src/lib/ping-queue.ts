@@ -1,4 +1,5 @@
 import { send } from "@vercel/queue";
+import { DEFAULT_FESTIVAL_ID } from "./festivals";
 
 export const PING_REMINDER_TOPIC = "space-safari-ping-reminders";
 // Keep each hop comfortably inside the queue's 24-hour retention window.
@@ -9,6 +10,7 @@ export const QUEUE_RETENTION_SECONDS = 24 * 60 * 60;
 export interface PingReminderMessage {
   chatId: string;
   artistSetId: string;
+  festivalId?: string;
   createdAt: string;
   hop: number;
 }
@@ -25,12 +27,14 @@ export function queueDelaySeconds(iso: string, nowMs = Date.now()): number {
 
 function idempotencyKey(message: PingReminderMessage): string {
   const created = Date.parse(message.createdAt);
-  return `ss-ping-${message.chatId}-${message.artistSetId}-${Number.isFinite(created) ? created : message.createdAt}-${message.hop}`.slice(0, 256);
+  const festival = message.festivalId ?? DEFAULT_FESTIVAL_ID;
+  return `ginder-ping-${festival}-${message.chatId}-${message.artistSetId}-${Number.isFinite(created) ? created : message.createdAt}-${message.hop}`.slice(0, 256);
 }
 
 export async function enqueuePingReminder(input: {
   chatId: string;
   artistSetId: string;
+  festivalId?: string;
   createdAt: string;
   notifyAt: string;
   hop?: number;
@@ -38,6 +42,7 @@ export async function enqueuePingReminder(input: {
   const message: PingReminderMessage = {
     chatId: input.chatId,
     artistSetId: input.artistSetId,
+    ...(input.festivalId && input.festivalId !== DEFAULT_FESTIVAL_ID ? { festivalId: input.festivalId } : {}),
     createdAt: input.createdAt,
     hop: input.hop ?? 0,
   };
