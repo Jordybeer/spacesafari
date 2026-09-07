@@ -25,18 +25,27 @@ type Member = GeoMember & {
   horizontalAccuracy: number | null;
 };
 
+type SessionUser = { id: number; firstName: string; username: string | null; photoUrl: string | null };
+
 type Session = {
   room: string;
   mode: RoomMode;
   storageReady: boolean;
   groupAvailable: boolean;
   chatType: string | null;
-  user: { id: number; firstName: string; username: string | null; photoUrl: string | null };
+  authSource: "miniapp" | "web" | null;
+  user: SessionUser | null;
   admin: boolean;
   anchorCount: number;
   anchors: Anchor[];
   members: Member[];
   serverTime: string;
+};
+
+type BrowserAuthStatus = {
+  authenticated: boolean;
+  loginConfigured: boolean;
+  user: SessionUser | null;
 };
 
 type TelegramLocationData = {
@@ -73,10 +82,11 @@ declare global {
   }
 }
 
-const SESSION_CACHE = "space-safari-map-session-v3";
+const SESSION_CACHE = "space-safari-map-session-v4";
 const LIVE_INTERVAL_MS = 25_000;
 const POLL_INTERVAL_MS = 15_000;
 const CONSTANT_TTL_SECONDS: ShareDuration = 604800;
+const ROOM_TOKEN_RE = /^[A-Za-z0-9_-]{20,32}$/;
 const SHARE_DURATIONS: { label: string; seconds: ShareDuration }[] = [
   { label: "15m", seconds: 900 },
   { label: "30m", seconds: 1800 },
@@ -129,10 +139,21 @@ async function telegramLocation(): Promise<LocationFix> {
   });
 }
 
+function authErrorText(code: string | null): string | null {
+  if (!code) return null;
+  if (code === "not_configured") return "Telegram-login is nog niet geconfigureerd voor deze website.";
+  if (code === "cancelled") return "Telegram-login werd geannuleerd.";
+  if (code === "expired") return "De Telegram-login is verlopen. Probeer opnieuw.";
+  return "Telegram-login mislukte. Probeer opnieuw.";
+}
+
 export default function MapClientV3() {
   const [initData, setInitData] = useState("");
-  const [mode, setMode] = useState<RoomMode>("group");
+  const [roomToken, setRoomToken] = useState<string | null>(null);
+  const [mode, setMode] = useState<RoomMode>("public");
   const [session, setSession] = useState<Session | null>(null);
+  const [authReady, setAuthReady] = useState(false);
+  const [loginConfigured, setLoginConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
   const [online, setOnline] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,19 +169,26 @@ export default function MapClientV3() {
   const [savingAnchor, setSavingAnchor] = useState(false);
   const calibrationRef = useRef<HTMLDivElement>(null);
 
+  const authPayload = useMemo(() => ({
+    ...(initData ? { initData } : {}),
+    ...(roomToken ? { roomToken } : {}),
+  }), [initData, roomToken]);
+
+  const cacheKey = `${SESSION_CACHE}:${mode}:${roomToken ?? "none"}`;
+
   const refresh = useCallback(async (quiet = false) => {
-    if (!initData) return;
+    if (!authReady) return;
     if (!quiet) setLoading(true);
     try {
-      const next = await postJson<Session>("/api/map/session", { initData, mode });
+      const next = await postJson<Session>("/api/map/session", { ...authPayload, mode });
       setSession(next);
       setOnline(true);
-      setError(null);
-      localStorage.setItem(`${SESSION_CACHE}:${mode}`, JSON.stringify(next));
+      if (!quiet) setError(null);
+      localStorage.setItem(cacheKey, JSON.stringify(next));
       if (mode === "group" && !next.groupAvailable) setMode("public");
     } catch (cause) {
       setOnline(false);
-      const cached = localStorage.getItem(`${SESSION_CACHE}:${mode}`);
+      const cached = localStorage.getItem(cacheKey);
       if (cached) {
         try { setSession(JSON.parse(cached) as Session); } catch { /* stale cache */ }
       }
@@ -168,7 +196,7 @@ export default function MapClientV3() {
     } finally {
       if (!quiet) setLoading(false);
     }
-  }, [initData, mode]);
+  }, [authPayload, authReady, cacheKey, mode]);
 
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
@@ -178,6 +206,17 @@ export default function MapClientV3() {
     webApp?.setBackgroundColor?.("#211120");
     webApp?.setBottomBarColor?.("#211120");
 
+    const query = new URLSearchParams(window.location.search);
+    const rawRoomToken = query.get("room");
+    const nextRoomToken = rawRoomToken && ROOM_TOKEN_RE.test(rawRoomToken) ? rawRoomToken : null;
+    setRoomToken(nextRoomToken);
+    const nextInitData = webApp?.initData ?? "";
+    setInitData(nextInitData);
+    setMode(nextInitData ? "group" : "public");
+
+    const authError = authErrorText(query.get("auth_error"));
+    if (authError) setError(authError);
+
     const applyInsets = () => {
       const inset = webApp?.contentSafeAreaInset ?? webApp?.safeAreaInset;
       document.documentElement.style.setProperty("--tg-safe-top", `${Math.max(0, inset?.top ?? 0)}px`);
@@ -186,8 +225,25 @@ export default function MapClientV3() {
     applyInsets();
     webApp?.onEvent?.("contentSafeAreaChanged", applyInsets);
     webApp?.onEvent?.("safeAreaChanged", applyInsets);
-    setInitData(webApp?.initData ?? "");
-    setLoading(false);
+
+    const finishAuth = async () => {
+      if (nextInitData) {
+        setAuthReady(true);
+        return;
+      }
+      try {
+        const response = await fetch("/api/auth/session", { cache: "no-store" });
+        const status = await response.json() as BrowserAuthStatus;
+        setLoginConfigured(status.loginConfigured);
+        if (status.authenticated && nextRoomToken) setMode("group");
+      } catch {
+        setLoginConfigured(false);
+      } finally {
+        setAuthReady(true);
+      }
+    };
+    void finishAuth();
+
     if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => undefined);
     return () => {
       webApp?.offEvent?.("contentSafeAreaChanged", applyInsets);
@@ -196,38 +252,39 @@ export default function MapClientV3() {
   }, []);
 
   useEffect(() => {
-    if (!initData) return;
+    if (!authReady) return;
     void refresh();
     const timer = window.setInterval(() => void refresh(true), POLL_INTERVAL_MS);
     return () => window.clearInterval(timer);
-  }, [initData, mode, refresh]);
+  }, [authReady, mode, refresh]);
 
   const updateOwnLocation = useCallback(async (ttlSeconds: number) => {
+    if (!session?.user) throw new Error("Log in met Telegram om je locatie te delen.");
     const location = await telegramLocation();
     setLastOwnFix(location);
-    await postJson("/api/map/location", { action: "update", initData, mode, location, ttlSeconds });
+    await postJson("/api/map/location", { action: "update", ...authPayload, mode, location, ttlSeconds });
     setSharing(true);
     setOnline(true);
     await refresh(true);
     return location;
-  }, [initData, mode, refresh]);
+  }, [authPayload, mode, refresh, session?.user]);
 
   const stopSharing = useCallback(async () => {
     setLiveSharing(false);
     setShareUntil(null);
-    if (!initData) return;
+    if (!session?.user) return;
     try {
-      await postJson("/api/map/location", { action: "stop", initData, mode });
+      await postJson("/api/map/location", { action: "stop", ...authPayload, mode });
       setSharing(false);
       setLastOwnFix(null);
       await refresh(true);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Stoppen met delen mislukte.");
     }
-  }, [initData, mode, refresh]);
+  }, [authPayload, mode, refresh, session?.user]);
 
   useEffect(() => {
-    if (!liveSharing || !initData) return;
+    if (!liveSharing || !session?.user) return;
     let cancelled = false;
 
     const update = async () => {
@@ -257,7 +314,7 @@ export default function MapClientV3() {
       window.clearInterval(timer);
       if (expiryTimer !== null) window.clearTimeout(expiryTimer);
     };
-  }, [initData, liveSharing, shareUntil, stopSharing, updateOwnLocation]);
+  }, [liveSharing, session?.user, shareUntil, stopSharing, updateOwnLocation]);
 
   const shareOnce = async () => {
     setError(null);
@@ -287,10 +344,24 @@ export default function MapClientV3() {
 
   const changeMode = async (next: RoomMode) => {
     if (next === mode) return;
+    if (next === "group" && !session?.groupAvailable) {
+      setError("Open een groepslink vanuit de Telegram-bot om deze groepskaart te gebruiken.");
+      return;
+    }
     if (sharing || liveSharing) await stopSharing();
     setMode(next);
     setSession(null);
     setError(null);
+  };
+
+  const logout = async () => {
+    await fetch("/api/auth/logout", { method: "POST", cache: "no-store" });
+    setLiveSharing(false);
+    setSharing(false);
+    setLastOwnFix(null);
+    setMode("public");
+    setSession(null);
+    await refresh();
   };
 
   const beginCalibration = async () => {
@@ -315,12 +386,12 @@ export default function MapClientV3() {
   };
 
   const saveCalibration = async () => {
-    if (!initData || !calibrationFix || !calibrationPoint || !anchorName.trim()) return;
+    if (!session?.admin || !calibrationFix || !calibrationPoint || !anchorName.trim()) return;
     setSavingAnchor(true);
     try {
       await postJson("/api/map/anchors", {
         action: "save",
-        initData,
+        ...authPayload,
         name: anchorName.trim(),
         ...calibrationFix,
         mapX: calibrationPoint.x,
@@ -339,28 +410,17 @@ export default function MapClientV3() {
   };
 
   const removeAnchor = async (id: string) => {
-    if (!initData || !confirm("Dit kalibratiepunt verwijderen?")) return;
-    await postJson("/api/map/anchors", { action: "delete", initData, id });
+    if (!session?.admin || !confirm("Dit kalibratiepunt verwijderen?")) return;
+    await postJson("/api/map/anchors", { action: "delete", ...authPayload, id });
     await refresh(true);
   };
 
   const freshMembers = useMemo(() => session?.members ?? [], [session]);
   const calibrated = (session?.anchorCount ?? 0) >= 2;
-  const me = freshMembers.find((member) => member.userId === session?.user.id);
+  const me = freshMembers.find((member) => member.userId === session?.user?.id);
   const selectedDurationLabel = SHARE_DURATIONS.find((item) => item.seconds === shareDuration)?.label ?? "30m";
-
-  if (!initData) {
-    return (
-      <main className={styles.shell}>
-        <section className={styles.browserFallback}>
-          <div className={styles.kicker}>SPACE SAFARI</div>
-          <h1>Festivalkaart</h1>
-          <p>Open deze kaart vanuit de Telegram-bot voor live groepslocaties.</p>
-          <a href="/festival-terrain-overlay.webp?v=1" className={styles.primaryButton}>Open statische kaart</a>
-        </section>
-      </main>
-    );
-  }
+  const returnTo = roomToken ? `/map?room=${encodeURIComponent(roomToken)}` : "/map";
+  const loginHref = `/api/auth/telegram/start?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <main className={`${styles.shell} ${styles.geoShell}`}>
@@ -376,11 +436,16 @@ export default function MapClientV3() {
       </header>
 
       <nav className={styles.roomTabs} aria-label="Kaartroom">
-        <button className={mode === "group" ? styles.activeTab : ""} disabled={session ? !session.groupAvailable : false} onClick={() => void changeMode("group")}>👥 Groep</button>
+        <button className={mode === "group" ? styles.activeTab : ""} disabled={!session?.groupAvailable} onClick={() => void changeMode("group")}>👥 Groep</button>
         <button className={mode === "public" ? styles.activeTab : ""} onClick={() => void changeMode("public")}>🌍 Publiek</button>
       </nav>
 
       {error && <div className={styles.errorBanner}>{error}</div>}
+      {session?.authSource === "web" && session.user && (
+        <div className={styles.infoBanner}>
+          Ingelogd als {session.user.username ? `@${session.user.username}` : session.user.firstName}. <button className={styles.stopCompact} onClick={() => void logout()}>Uitloggen</button>
+        </div>
+      )}
 
       <section className={`${styles.mapCard} ${styles.geoMapCard}`}>
         <div className={styles.mapTopbar}>
@@ -396,7 +461,7 @@ export default function MapClientV3() {
         <FestivalGeoMap
           anchors={session?.anchors ?? []}
           members={freshMembers}
-          ownUserId={session?.user.id}
+          ownUserId={session?.user?.id}
           ownFix={lastOwnFix}
           showNames={showNames}
         />
@@ -404,32 +469,43 @@ export default function MapClientV3() {
 
       {!session?.storageReady && session && <div className={styles.infoBanner}>Live opslag ontbreekt. De kaart zelf blijft bruikbaar.</div>}
 
-      <section className={styles.controlDock} aria-label="Locatie delen">
-        <div className={styles.shareDurations} aria-label="Duur locatie delen">
-          {SHARE_DURATIONS.map((item) => (
-            <button
-              type="button"
-              key={item.seconds}
-              className={shareDuration === item.seconds ? styles.activeDuration : ""}
-              onClick={() => chooseDuration(item.seconds)}
-              aria-pressed={shareDuration === item.seconds}
-            >
-              {item.label}
-            </button>
-          ))}
-        </div>
-        <button className={styles.primaryButton} disabled={loading || session?.storageReady === false} onClick={() => void shareOnce()}>
-          📍 {sharing || me ? "Bijwerken" : "Deel locatie"}
-        </button>
-        <label className={styles.liveCompact}>
-          <span><strong>Live</strong><small>{selectedDurationLabel}</small></span>
-          <span className={styles.switch}>
-            <input type="checkbox" checked={liveSharing} disabled={session?.storageReady === false} onChange={(event) => toggleLiveSharing(event.target.checked)} />
-            <span />
-          </span>
-        </label>
-        {(sharing || liveSharing || me) && <button className={styles.stopCompact} onClick={() => void stopSharing()}>Stop</button>}
-      </section>
+      {session?.user ? (
+        <section className={styles.controlDock} aria-label="Locatie delen">
+          <div className={styles.shareDurations} aria-label="Duur locatie delen">
+            {SHARE_DURATIONS.map((item) => (
+              <button
+                type="button"
+                key={item.seconds}
+                className={shareDuration === item.seconds ? styles.activeDuration : ""}
+                onClick={() => chooseDuration(item.seconds)}
+                aria-pressed={shareDuration === item.seconds}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <button className={styles.primaryButton} disabled={loading || session.storageReady === false} onClick={() => void shareOnce()}>
+            📍 {sharing || me ? "Bijwerken" : "Deel locatie"}
+          </button>
+          <label className={styles.liveCompact}>
+            <span><strong>Live</strong><small>{selectedDurationLabel}</small></span>
+            <span className={styles.switch}>
+              <input type="checkbox" checked={liveSharing} disabled={session.storageReady === false} onChange={(event) => toggleLiveSharing(event.target.checked)} />
+              <span />
+            </span>
+          </label>
+          {(sharing || liveSharing || me) && <button className={styles.stopCompact} onClick={() => void stopSharing()}>Stop</button>}
+        </section>
+      ) : (
+        <section className={styles.controlDock} aria-label="Telegram login">
+          <div className={styles.infoBanner}>De kaart is publiek. Log in met Telegram om je locatie te delen{roomToken ? " en deze groepslink te gebruiken" : ""}.</div>
+          {loginConfigured ? (
+            <a className={styles.primaryButton} href={loginHref}>Log in met Telegram</a>
+          ) : (
+            <div className={styles.infoBanner}>Telegram Web Login moet nog één keer in BotFather worden gekoppeld aan spacesafari.jordy.beer.</div>
+          )}
+        </section>
+      )}
 
       {session?.admin && (
         <details className={styles.adminCard}>
