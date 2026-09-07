@@ -1,7 +1,7 @@
-const DEFAULT_APP_URL = "https://spacesafari.jordy.beer";
+const DEFAULT_APP_URL = "https://ginder.jordy.beer";
 
-// Normalize the canonical production origin once so legacy callers that still
-// read process.env.APP_URL directly get the same safe fallback as requireEnv().
+// Normalize the canonical production origin once so callers that read
+// process.env.APP_URL directly get the same safe fallback as requireEnv().
 if (!process.env.APP_URL) process.env.APP_URL = DEFAULT_APP_URL;
 
 export function requireEnv(name: string): string {
