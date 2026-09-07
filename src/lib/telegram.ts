@@ -16,11 +16,40 @@ export interface TelegramChat {
   title?: string;
 }
 
+export interface TelegramPhotoSize {
+  file_id: string;
+  file_unique_id: string;
+  width: number;
+  height: number;
+  file_size?: number;
+}
+
+export interface TelegramDocument {
+  file_id: string;
+  file_unique_id: string;
+  file_name?: string;
+  mime_type?: string;
+  file_size?: number;
+  thumbnail?: TelegramPhotoSize;
+}
+
+export interface TelegramChatShared {
+  request_id: number;
+  chat_id: number;
+  title?: string;
+  username?: string;
+  photo?: TelegramPhotoSize[];
+}
+
 export interface TelegramMessage {
   message_id: number;
   from?: TelegramUser;
   chat: TelegramChat;
   text?: string;
+  caption?: string;
+  photo?: TelegramPhotoSize[];
+  document?: TelegramDocument;
+  chat_shared?: TelegramChatShared;
 }
 
 export interface TelegramUpdate {
@@ -79,6 +108,23 @@ export function answerCallbackQuery(callbackQueryId: string, text?: string) {
     callback_query_id: callbackQueryId,
     ...(text ? { text } : {}),
   });
+}
+
+export async function createChatInviteLink(chatId: string | number, name = "Ginder") {
+  return await callTelegram<{ invite_link: string }>("createChatInviteLink", {
+    chat_id: chatId,
+    name: name.slice(0, 32),
+  });
+}
+
+export async function getTelegramFilePath(fileId: string): Promise<string> {
+  const file = await callTelegram<{ file_path?: string }>("getFile", { file_id: fileId });
+  if (!file.file_path) throw new Error("Telegram gaf geen bestandspad terug.");
+  return file.file_path;
+}
+
+export function telegramFileUrl(filePath: string): string {
+  return `${API}/file/bot${requireEnv("TELEGRAM_BOT_TOKEN")}/${filePath.replace(/^\/+/, "")}`;
 }
 
 export function mapMiniAppUrl(startParam = "map"): string {
