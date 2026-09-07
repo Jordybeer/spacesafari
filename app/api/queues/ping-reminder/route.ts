@@ -25,7 +25,7 @@ export const POST = handleCallback(
       return;
     }
 
-    await deliverPingNotification(message.chatId, message.artistSetId, undefined, festivalId);
+    await deliverPingNotification(message.chatId, message.artistSetId, festivalId);
   },
   {
     visibilityTimeoutSeconds: 60,
