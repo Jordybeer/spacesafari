@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
+import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { isMapAdmin, listAnchors, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -30,7 +31,7 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const festival = requireFestivalDefinition(input.festivalId);
+    const festival = await requireResolvedFestivalDefinition(input.festivalId);
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
