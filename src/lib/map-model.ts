@@ -28,6 +28,7 @@ export interface MapPresence {
   longitude: number;
   horizontalAccuracy: number | null;
   updatedAt: string;
+  simulated?: boolean;
 }
 
 export interface ProjectedPresence extends MapPresence {
@@ -82,7 +83,7 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   latitude: number;
   longitude: number;
   horizontalAccuracy?: number | null;
-}, ttlSeconds = PRESENCE_TTL_SECONDS): Promise<MapPresence> {
+}, ttlSeconds = PRESENCE_TTL_SECONDS, options?: { simulated?: boolean }): Promise<MapPresence> {
   const redis = getRedis();
   const ttl = Math.max(60, Math.min(MAX_PRESENCE_TTL_SECONDS, Math.round(ttlSeconds)));
   const presence: MapPresence = {
@@ -94,6 +95,7 @@ export async function putPresence(room: string, user: TelegramUser, location: {
     longitude: location.longitude,
     horizontalAccuracy: location.horizontalAccuracy ?? null,
     updatedAt: new Date().toISOString(),
+    ...(options?.simulated ? { simulated: true } : {}),
   };
   const userKey = `ss:room:${room}:presence:${user.id}`;
   const membersKey = `ss:room:${room}:members`;
