@@ -12,6 +12,7 @@ export type DeliveryResult = "sent" | "skipped" | "duplicate";
 export interface NotificationDeliveryDeps {
   getPing(chatId: string, setId: string, festivalId?: string): Promise<ArtistPing | null>;
   setById(setId: string, festivalId?: string): FestivalScheduleEntry | undefined | Promise<FestivalScheduleEntry | undefined>;
+  festivalTimezone(festivalId: string): Promise<string>;
   setLock(key: string): Promise<boolean>;
   clearLock(key: string): Promise<void>;
   send(chatId: string, text: string): Promise<unknown>;
@@ -23,6 +24,9 @@ function defaultDeps(): NotificationDeliveryDeps {
   return {
     getPing,
     setById: setByIdForFestival,
+    async festivalTimezone(festivalId) {
+      return (await requireResolvedFestivalDefinition(festivalId)).timezone;
+    },
     async setLock(key) {
       const result = await redis.set(key, "1", { nx: true, ex: 120 });
       return Boolean(result);
@@ -45,9 +49,14 @@ export function deliveryLockKey(
 export async function deliverPingNotification(
   chatId: string,
   artistSetId: string,
-  deps: NotificationDeliveryDeps = defaultDeps(),
-  festivalId = DEFAULT_FESTIVAL_ID,
+  festivalIdOrDeps: string | NotificationDeliveryDeps = DEFAULT_FESTIVAL_ID,
+  injectedDeps?: NotificationDeliveryDeps,
 ): Promise<DeliveryResult> {
+  const festivalId = typeof festivalIdOrDeps === "string" ? festivalIdOrDeps : DEFAULT_FESTIVAL_ID;
+  const deps = typeof festivalIdOrDeps === "string"
+    ? injectedDeps ?? defaultDeps()
+    : festivalIdOrDeps;
+
   const ping = await deps.getPing(chatId, artistSetId, festivalId);
   if (!ping || ping.sentAt) return "skipped";
   const set = await deps.setById(artistSetId, festivalId);
@@ -59,8 +68,8 @@ export async function deliverPingNotification(
   try {
     const latest = await deps.getPing(chatId, artistSetId, festivalId);
     if (!latest || latest.sentAt) return "skipped";
-    const festival = await requireResolvedFestivalDefinition(festivalId);
-    await deps.send(chatId, ["🔔 Over 15 minuten", "", formatScheduleEntry(set, festival.timezone)].join("\n"));
+    const timezone = await deps.festivalTimezone(festivalId);
+    await deps.send(chatId, ["🔔 Over 15 minuten", "", formatScheduleEntry(set, timezone)].join("\n"));
     await deps.markSent(latest);
     return "sent";
   } catch (error) {
