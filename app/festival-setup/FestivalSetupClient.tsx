@@ -121,46 +121,57 @@ export default function FestivalSetupClient() {
     const hash = new URLSearchParams(window.location.hash.replace(/^#/, ""));
     const token = hash.get("token")?.trim() ?? "";
     if (!festivalId) return;
-    if (!token) {
-      const timer = window.setTimeout(() => {
-        setMessage("Deze festival-link mist de setup-sleutel. Open de link opnieuw vanuit je Ginder-groep.");
-      }, 0);
-      return () => window.clearTimeout(timer);
-    }
 
-    setConnectedFestivalId(festivalId);
-    setSetupToken(token);
-    setBusy(true);
-    void fetch("/api/festivals/setup", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "load", festivalId, token }),
-      cache: "no-store",
-    }).then(async (response) => {
-      const payload = await response.json() as {
-        ok?: boolean;
-        error?: string;
-        festival?: ConnectedFestival;
-        anchors?: PlannedAnchor[];
-      };
-      if (!response.ok || !payload.ok || !payload.festival) {
-        throw new Error(payload.error || "Festival kon niet worden geladen.");
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      if (cancelled) return;
+      if (!token) {
+        setMessage("Deze festival-link mist de setup-sleutel. Open de link opnieuw vanuit je Ginder-groep.");
+        return;
       }
-      const festival = payload.festival;
-      setName(festival.name);
-      setYear(festival.year);
-      setStatus(festival.status);
-      setMapImageUrl(festival.mapImageUrl || "");
-      setMapImageWidth(festival.mapImageWidth || 640);
-      setMapImageHeight(festival.mapImageHeight || 800);
-      setCenterLat(festival.venueCenter.latitude || festival.venueCenter.longitude ? String(festival.venueCenter.latitude) : "");
-      setCenterLon(festival.venueCenter.latitude || festival.venueCenter.longitude ? String(festival.venueCenter.longitude) : "");
-      setRadius(String(festival.venueMaxDistanceMeters || 3000));
-      setAnchors(payload.anchors ?? []);
-      setMessage(festival.chatTitle ? `Gekoppeld aan ${festival.chatTitle}.` : "Festival geladen.");
-    }).catch((error) => {
-      setMessage(error instanceof Error ? error.message : "Festival kon niet worden geladen.");
-    }).finally(() => setBusy(false));
+
+      setConnectedFestivalId(festivalId);
+      setSetupToken(token);
+      setBusy(true);
+      void fetch("/api/festivals/setup", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "load", festivalId, token }),
+        cache: "no-store",
+      }).then(async (response) => {
+        const payload = await response.json() as {
+          ok?: boolean;
+          error?: string;
+          festival?: ConnectedFestival;
+          anchors?: PlannedAnchor[];
+        };
+        if (!response.ok || !payload.ok || !payload.festival) {
+          throw new Error(payload.error || "Festival kon niet worden geladen.");
+        }
+        if (cancelled) return;
+        const festival = payload.festival;
+        setName(festival.name);
+        setYear(festival.year);
+        setStatus(festival.status);
+        setMapImageUrl(festival.mapImageUrl || "");
+        setMapImageWidth(festival.mapImageWidth || 640);
+        setMapImageHeight(festival.mapImageHeight || 800);
+        setCenterLat(festival.venueCenter.latitude || festival.venueCenter.longitude ? String(festival.venueCenter.latitude) : "");
+        setCenterLon(festival.venueCenter.latitude || festival.venueCenter.longitude ? String(festival.venueCenter.longitude) : "");
+        setRadius(String(festival.venueMaxDistanceMeters || 3000));
+        setAnchors(payload.anchors ?? []);
+        setMessage(festival.chatTitle ? `Gekoppeld aan ${festival.chatTitle}.` : "Festival geladen.");
+      }).catch((error) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : "Festival kon niet worden geladen.");
+      }).finally(() => {
+        if (!cancelled) setBusy(false);
+      });
+    }, 0);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
   }, []);
 
   const tapMap = (event: React.MouseEvent<HTMLDivElement>) => {
