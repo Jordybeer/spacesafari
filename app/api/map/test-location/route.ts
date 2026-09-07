@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { festivalSelectorForContext } from "@/src/lib/festival-links";
-import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { isFestivalOwner, requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { isMapAdmin, listAnchors, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     const festival = await requireResolvedFestivalDefinition(
       festivalSelectorForContext(data.source, data.startParam, input.festivalId),
     );
-    if (!isMapAdmin(data.user.id)) {
+    if (!isMapAdmin(data.user.id) && !isFestivalOwner(festival, data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
     if (!isRedisConfigured()) {

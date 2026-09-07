@@ -89,6 +89,12 @@ export function buildFestivalId(name: string, year: number, suffix = randomPubli
   return `${slugify(name)}-${year}-${suffix}`.slice(0, 56);
 }
 
+export function isFestivalOwner(festival: FestivalDefinition, telegramUserId: number): boolean {
+  return "ownerTelegramId" in festival
+    && typeof festival.ownerTelegramId === "number"
+    && festival.ownerTelegramId === telegramUserId;
+}
+
 export async function getPersistedFestival(id: string): Promise<PersistedFestival | null> {
   return await getRedis().hget<PersistedFestival>(FESTIVALS_KEY, normalizeFestivalId(id));
 }

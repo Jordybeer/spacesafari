@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { festivalSelectorForContext } from "@/src/lib/festival-links";
-import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { isFestivalOwner, requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
 import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
 import { getGroupMeetPoint, getGroupMeetStatuses, listGroupTentPoints } from "@/src/lib/group-tools";
 import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
@@ -63,6 +63,9 @@ export async function POST(request: Request) {
     }));
 
     const serverTime = new Date().toISOString();
+    const admin = data
+      ? isMapAdmin(data.user.id) || isFestivalOwner(festival, data.user.id)
+      : false;
     return NextResponse.json({
       festival: {
         id: festival.id,
@@ -89,7 +92,7 @@ export async function POST(request: Request) {
         username: data.user.username ?? null,
         photoUrl: data.user.photo_url ?? null,
       } : null,
-      admin: data ? isMapAdmin(data.user.id) : false,
+      admin,
       anchorCount: anchors.length,
       anchors: anchors.map((anchor) => ({
         id: anchor.id,
