@@ -23,8 +23,6 @@ const RequestSchema = z.discriminatedUnion("action", [
   }),
 ]);
 
-const TEST_TTL_SECONDS = 10 * 60;
-
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
@@ -57,11 +55,11 @@ export async function POST(request: Request) {
         longitude: anchor.longitude,
         horizontalAccuracy: anchor.horizontalAccuracy,
       },
-      TEST_TTL_SECONDS,
-      { simulated: true },
+      undefined,
+      { simulated: true, persistent: true },
     );
 
-    return NextResponse.json({ ok: true, anchor: anchor.name, ttlSeconds: TEST_TTL_SECONDS });
+    return NextResponse.json({ ok: true, anchor: anchor.name, persistent: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
     return NextResponse.json({ error: message }, { status: 400 });
