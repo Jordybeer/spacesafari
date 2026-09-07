@@ -172,12 +172,14 @@ function authErrorText(code: string | null): string | null {
 }
 
 function launchFestivalSelector(initData: string, query: URLSearchParams): string {
+  if (initData) {
+    const startParam = new URLSearchParams(initData).get("start_param");
+    return parseFestivalStartParam(startParam).selector ?? DEFAULT_FESTIVAL_ID;
+  }
+
   const explicit = query.get("festival")?.trim();
   if (explicit) return explicit;
-  const startParam = initData
-    ? new URLSearchParams(initData).get("start_param")
-    : query.get("startapp");
-  return parseFestivalStartParam(startParam).selector ?? DEFAULT_FESTIVAL_ID;
+  return parseFestivalStartParam(query.get("startapp")).selector ?? DEFAULT_FESTIVAL_ID;
 }
 
 export default function MapClientV3() {
@@ -246,10 +248,17 @@ export default function MapClientV3() {
     const rawRoomToken = query.get("room");
     const nextRoomToken = rawRoomToken && ROOM_TOKEN_RE.test(rawRoomToken) ? rawRoomToken : null;
     const nextInitData = webApp?.initData ?? "";
+    const nextFestivalId = launchFestivalSelector(nextInitData, query);
     setRoomToken(nextRoomToken);
     setInitData(nextInitData);
-    setFestivalId(launchFestivalSelector(nextInitData, query));
+    setFestivalId(nextFestivalId);
     setMode(nextInitData ? "group" : "public");
+
+    if (nextInitData && query.has("festival")) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("festival");
+      window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    }
 
     const authError = authErrorText(query.get("auth_error"));
     if (authError) setError(authError);
@@ -528,15 +537,19 @@ export default function MapClientV3() {
           </label>
         </div>
 
-        <FestivalGeoMap
-          anchors={session?.anchors ?? []}
-          members={freshMembers}
-          meet={session?.meet ?? null}
-          tents={session?.tents ?? []}
-          ownUserId={session?.user?.id}
-          ownFix={lastOwnFix}
-          showNames={showNames}
-        />
+        {session ? (
+          <FestivalGeoMap
+            anchors={session.anchors}
+            members={freshMembers}
+            meet={session.meet}
+            tents={session.tents}
+            ownUserId={session.user?.id}
+            ownFix={lastOwnFix}
+            showNames={showNames}
+          />
+        ) : (
+          <div className={styles.infoBanner}>Festival laden…</div>
+        )}
       </section>
 
       {!session?.storageReady && session && <div className={styles.infoBanner}>Live opslag ontbreekt. De kaart zelf blijft bruikbaar.</div>}
