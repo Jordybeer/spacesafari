@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseFestivalStartParam } from "@/src/lib/festival-links";
+import { festivalSelectorForContext } from "@/src/lib/festival-links";
 import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
-import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { MAX_PRESENCE_TTL_SECONDS, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isNearFestival } from "@/src/lib/venue";
@@ -42,11 +41,8 @@ export async function POST(request: Request) {
     const input = RequestSchema.parse(await request.json());
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = requireMapAuth(request, input.initData, roomToken);
-    const launchFestival = data.source === "miniapp"
-      ? parseFestivalStartParam(data.startParam).selector
-      : null;
     const festival = await requireResolvedFestivalDefinition(
-      launchFestival ?? input.festivalId ?? DEFAULT_FESTIVAL_ID,
+      festivalSelectorForContext(data.source, data.startParam, input.festivalId),
     );
     const room = roomFor(data, input.mode);
 
