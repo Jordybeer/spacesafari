@@ -5,6 +5,7 @@ import { timingSafeSecretEqual } from "./webhook-security";
 const ROOM_TOKEN_RE = /^[A-Za-z0-9_-]{32}$/;
 const TOKEN_NONCE_BYTES = 12;
 const TOKEN_TAG_BYTES = 12;
+const WHATSAPP_SEND_TIMEOUT_MS = 10_000;
 
 export type WhatsAppGroupTextMessage = {
   groupId: string;
@@ -143,6 +144,7 @@ export async function sendWhatsAppGroupText(groupId: string, text: string): Prom
         text: { body: text },
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(WHATSAPP_SEND_TIMEOUT_MS),
     },
   );
 
