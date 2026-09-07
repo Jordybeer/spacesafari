@@ -102,16 +102,31 @@ export default function AdminSpoofControl() {
     setBusy(true);
     setError(null);
     try {
+      if (enabled) {
+        // Kill any regular/live GPS presence first. Reloading immediately after the
+        // spoof is stored also resets the Mini App's client-side live-location timer,
+        // so real home GPS cannot keep firing geofence errors over test mode.
+        try {
+          await postJson("/api/map/location", {
+            action: "stop",
+            ...authPayload,
+            mode,
+          });
+        } catch {
+          // No existing presence is fine; the spoof call below is authoritative.
+        }
+      }
+
       await postJson("/api/map/test-location", {
         action: enabled ? "start" : "stop",
         ...authPayload,
         mode,
         ...(enabled ? { anchorName } : {}),
       });
-      await refresh(mode);
+
+      window.location.reload();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Testlocatie instellen mislukte.");
-    } finally {
       setBusy(false);
     }
   };
