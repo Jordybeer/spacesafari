@@ -1,0 +1,280 @@
+import {
+  beginFestivalNamePrompt,
+  claimCreationSlot,
+  clearPendingFestival,
+  consumeFestivalNamePrompt,
+  createPendingFestival,
+  festivalMapStartParam,
+  finalizePendingFestival,
+  getCreationCooldownSeconds,
+  getCurrentFestivalForOwner,
+  getPendingFestival,
+  releaseCreationSlot,
+  setupUrl,
+  updatePersistedFestival,
+  type PendingFestivalCreation,
+  type PersistedFestival,
+} from "./festival-store";
+import { privateRoomToken } from "./map-model";
+import {
+  createChatInviteLink,
+  mapMiniAppUrl,
+  sendMessage,
+  type TelegramChat,
+  type TelegramMessage,
+  type TelegramUpdate,
+} from "./telegram";
+
+function commandAndArgs(text: string): { command: string; args: string } {
+  const [raw = "", ...rest] = text.trim().split(/\s+/);
+  return { command: raw.split("@")[0].toLowerCase(), args: rest.join(" ").trim() };
+}
+
+function isPrivate(chat: TelegramChat): boolean {
+  return chat.type === "private";
+}
+
+function parseFestivalNameAndYear(value: string): { name: string; year: number } {
+  const trimmed = value.trim().replace(/\s+/g, " ");
+  const match = trimmed.match(/(?:^|\s)(20\d{2}|21\d{2})$/);
+  const year = match ? Number(match[1]) : new Date().getFullYear();
+  const name = match ? trimmed.slice(0, match.index).trim() : trimmed;
+  return { name: name.slice(0, 80), year };
+}
+
+function cooldownText(seconds: number): string {
+  const hours = Math.max(1, Math.ceil(seconds / 3600));
+  if (hours < 24) return `${hours} uur`;
+  const days = Math.ceil(hours / 24);
+  return `${days} dag${days === 1 ? "" : "en"}`;
+}
+
+function adminRights() {
+  return {
+    is_anonymous: false,
+    can_manage_chat: true,
+    can_delete_messages: false,
+    can_manage_video_chats: false,
+    can_restrict_members: false,
+    can_promote_members: false,
+    can_change_info: false,
+    can_invite_users: true,
+    can_post_stories: false,
+    can_edit_stories: false,
+    can_delete_stories: false,
+    can_pin_messages: false,
+    can_manage_topics: false,
+    can_manage_tags: false,
+    can_send_welcome_messages: false,
+  };
+}
+
+async function askForGroup(chatId: number, pending: PendingFestivalCreation): Promise<void> {
+  const rights = adminRights();
+  await sendMessage(
+    chatId,
+    [
+      `📍 ${pending.name} ${pending.year}`,
+      "",
+      "Kies nu de Telegram-groep die bij dit festival hoort.",
+      "Heb je er nog geen? Maak eerst even een gewone groep in Telegram en kom dan terug naar deze knop.",
+    ].join("\n"),
+    {
+      reply_markup: {
+        keyboard: [[{
+          text: "👥 Kies festivalgroep",
+          request_chat: {
+            request_id: pending.requestId,
+            chat_is_channel: false,
+            chat_is_created: true,
+            user_administrator_rights: rights,
+            bot_administrator_rights: rights,
+            request_title: true,
+            request_username: true,
+          },
+        }]],
+        resize_keyboard: true,
+        one_time_keyboard: true,
+        input_field_placeholder: "Kies je festivalgroep…",
+      },
+    },
+  );
+}
+
+async function startFestivalCreation(message: TelegramMessage, rawName: string): Promise<void> {
+  const userId = message.from?.id;
+  if (!userId) return;
+  if (!isPrivate(message.chat)) {
+    const username = process.env.TELEGRAM_BOT_USERNAME?.replace(/^@/, "");
+    const url = username ? `https://t.me/${username}?start=festival` : undefined;
+    await sendMessage(message.chat.id, "Nieuwe festivals maak je in privé met Ginder.", {
+      ...(url ? { reply_markup: { inline_keyboard: [[{ text: "📍 Open Ginder privé", url }]] } } : {}),
+    });
+    return;
+  }
+
+  const cooldown = await getCreationCooldownSeconds(userId);
+  if (cooldown > 0) {
+    await sendMessage(message.chat.id, `Je kunt één nieuw festival per 7 dagen aanmaken. Nog ongeveer ${cooldownText(cooldown)} wachten.`);
+    return;
+  }
+
+  if (!rawName.trim()) {
+    await beginFestivalNamePrompt(userId);
+    await sendMessage(message.chat.id, "Hoe heet het festival? Stuur gewoon de naam, eventueel met het jaar erachter.", {
+      reply_markup: { force_reply: true, input_field_placeholder: "bv. Horst 2027" },
+    });
+    return;
+  }
+
+  const { name, year } = parseFestivalNameAndYear(rawName);
+  if (!name) {
+    await sendMessage(message.chat.id, "Ik mis nog een festivalnaam.");
+    return;
+  }
+  const pending = await createPendingFestival(userId, name, year);
+  await askForGroup(message.chat.id, pending);
+}
+
+async function onboardingMessages(festival: PersistedFestival, setupToken: string): Promise<void> {
+  if (festival.chatId === null) return;
+  const roomToken = privateRoomToken(festival.chatId);
+  const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
+  const configUrl = setupUrl(festival, setupToken);
+
+  await sendMessage(festival.chatId, [
+    `👋 Welkom bij Ginder voor ${festival.name} ${festival.year}.`,
+    "",
+    "Deze groep is nu gekoppeld. Jij blijft gewoon eigenaar van de groep; Ginder gebruikt alleen de rechten die nodig zijn voor de festivaltools.",
+  ].join("\n"));
+
+  await sendMessage(festival.chatId, [
+    "🗺 Eerst de kaart klaarzetten:",
+    "1. Stuur de festivalkaart naar Ginder in privé. Liefst het originele bestand / de hoogste resolutie die je hebt.",
+    "2. Open daarna ‘Festival instellen’ hieronder.",
+    "3. Zet het terreincentrum en leg liefst 4–6 vaste, goed verspreide ankers op herkenbare plekken. Twee werkt technisch, meer is stabieler.",
+    "4. Daarna komt de timetable aan de beurt.",
+  ].join("\n"), {
+    reply_markup: {
+      inline_keyboard: [
+        [{ text: "⚙️ Festival instellen", url: configUrl }],
+        [{ text: "🗺 Open kaart", url: mapUrl }],
+      ],
+    },
+  });
+
+  const inviteText = festival.inviteLink
+    ? `Nodig de rest maar uit: ${festival.inviteLink}`
+    : "Nodig de rest maar uit via de groepsinfo. De invite-link kon ik niet zelf aanmaken, maar de groep is wel gekoppeld.";
+  await sendMessage(festival.chatId, `👥 ${inviteText}\n\nVanaf hier mogen jullie elkaar weer gewoon kwijtraken.`);
+}
+
+async function finishGroupLink(message: TelegramMessage): Promise<void> {
+  const userId = message.from?.id;
+  const shared = message.chat_shared;
+  if (!userId || !shared || !isPrivate(message.chat)) return;
+
+  const pending = await getPendingFestival(userId);
+  if (!pending || pending.requestId !== shared.request_id) {
+    await sendMessage(message.chat.id, "Die groepskeuze hoort niet meer bij een actieve festivalsetup. Gebruik /festival opnieuw.", {
+      reply_markup: { remove_keyboard: true },
+    });
+    return;
+  }
+
+  if (!(await claimCreationSlot(userId))) {
+    await clearPendingFestival(userId);
+    const cooldown = await getCreationCooldownSeconds(userId);
+    await sendMessage(message.chat.id, `Je 7-dagenlimiet is intussen actief. Nog ongeveer ${cooldownText(cooldown)} wachten.`, {
+      reply_markup: { remove_keyboard: true },
+    });
+    return;
+  }
+
+  try {
+    const created = await finalizePendingFestival(pending, { id: shared.chat_id, title: shared.title });
+    let festival = created.festival;
+    try {
+      const invite = await createChatInviteLink(shared.chat_id, `Ginder · ${festival.name}`);
+      festival = await updatePersistedFestival(festival.id, { inviteLink: invite.invite_link });
+    } catch (error) {
+      console.warn("Ginder could not create Telegram invite link", error);
+    }
+
+    await onboardingMessages(festival, created.setupToken);
+    await sendMessage(message.chat.id, `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
+      reply_markup: { remove_keyboard: true },
+    });
+  } catch (error) {
+    await releaseCreationSlot(userId);
+    console.error("Festival group linking failed", error);
+    await sendMessage(message.chat.id, "Koppelen lukte niet. Er is niets van je 7-dagenlimiet verbruikt; probeer /festival opnieuw.", {
+      reply_markup: { remove_keyboard: true },
+    });
+  }
+}
+
+async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean> {
+  if (!isPrivate(message.chat) || !message.from) return false;
+  const photos = message.photo ?? [];
+  const largestPhoto = photos.length
+    ? [...photos].sort((a, b) => b.width * b.height - a.width * a.height)[0]
+    : null;
+  const imageDocument = message.document?.mime_type?.startsWith("image/") ? message.document : null;
+  const fileId = imageDocument?.file_id ?? largestPhoto?.file_id;
+  if (!fileId) return false;
+
+  const festival = await getCurrentFestivalForOwner(message.from.id);
+  if (!festival || festival.status !== "map") return false;
+  const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+  if (!appUrl) throw new Error("APP_URL is not configured");
+
+  await updatePersistedFestival(festival.id, {
+    telegramMapFileId: fileId,
+    mapImageUrl: `${appUrl}/api/festivals/${encodeURIComponent(festival.id)}/map-image`,
+    mapImageWidth: largestPhoto?.width ?? festival.mapImageWidth,
+    mapImageHeight: largestPhoto?.height ?? festival.mapImageHeight,
+    status: "anchors",
+  });
+  await sendMessage(message.chat.id, [
+    `✅ Kaart ontvangen voor ${festival.name}.`,
+    "Open nu de setup-link die ik in je festivalgroep heb gezet om terrein + ankers af te werken.",
+  ].join("\n"));
+  return true;
+}
+
+export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Promise<boolean> {
+  const message = update.message;
+  if (!message) return false;
+
+  if (message.chat_shared) {
+    await finishGroupLink(message);
+    return true;
+  }
+
+  if (await maybeStoreFestivalMap(message)) return true;
+  if (!message.text || !message.from) return false;
+
+  const { command, args } = commandAndArgs(message.text);
+  if (command === "/festival") {
+    if (args.toLowerCase() === "cancel") {
+      await clearPendingFestival(message.from.id);
+      await sendMessage(message.chat.id, "Festivalsetup geannuleerd.", { reply_markup: { remove_keyboard: true } });
+      return true;
+    }
+    await startFestivalCreation(message, args);
+    return true;
+  }
+
+  if (command === "/start" && args.toLowerCase() === "festival") {
+    await startFestivalCreation(message, "");
+    return true;
+  }
+
+  if (isPrivate(message.chat) && !command.startsWith("/") && await consumeFestivalNamePrompt(message.from.id)) {
+    await startFestivalCreation(message, message.text);
+    return true;
+  }
+
+  return false;
+}
