@@ -83,7 +83,7 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   latitude: number;
   longitude: number;
   horizontalAccuracy?: number | null;
-}, ttlSeconds = PRESENCE_TTL_SECONDS, options?: { simulated?: boolean }): Promise<MapPresence> {
+}, ttlSeconds = PRESENCE_TTL_SECONDS, options?: { simulated?: boolean; persistent?: boolean }): Promise<MapPresence> {
   const redis = getRedis();
   const ttl = Math.max(60, Math.min(MAX_PRESENCE_TTL_SECONDS, Math.round(ttlSeconds)));
   const presence: MapPresence = {
@@ -99,9 +99,21 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   };
   const userKey = `ss:room:${room}:presence:${user.id}`;
   const membersKey = `ss:room:${room}:members`;
+  const persistentMembersKey = `ss:room:${room}:persistent-members`;
+
+  if (options?.persistent) {
+    await Promise.all([
+      redis.set(userKey, presence),
+      redis.sadd(persistentMembersKey, String(user.id)),
+      redis.srem(membersKey, String(user.id)),
+    ]);
+    return presence;
+  }
+
   await Promise.all([
     redis.set(userKey, presence, { ex: ttl }),
     redis.sadd(membersKey, String(user.id)),
+    redis.srem(persistentMembersKey, String(user.id)),
     redis.expire(membersKey, Math.max(PRESENCE_TTL_SECONDS * 2, ttl * 2)),
   ]);
   return presence;
@@ -112,24 +124,34 @@ export async function stopPresence(room: string, userId: number): Promise<void> 
   await Promise.all([
     redis.del(`ss:room:${room}:presence:${userId}`),
     redis.srem(`ss:room:${room}:members`, String(userId)),
+    redis.srem(`ss:room:${room}:persistent-members`, String(userId)),
   ]);
 }
 
 export async function listPresence(room: string): Promise<MapPresence[]> {
   const redis = getRedis();
-  const members = await redis.smembers<string[]>(`ss:room:${room}:members`);
-  if (!members.length) return [];
+  const [members, persistentMembers] = await Promise.all([
+    redis.smembers<string[]>(`ss:room:${room}:members`),
+    redis.smembers<string[]>(`ss:room:${room}:persistent-members`),
+  ]);
+  const allMembers = Array.from(new Set([...(members ?? []), ...(persistentMembers ?? [])]));
+  if (!allMembers.length) return [];
 
   const values = await Promise.all(
-    members.map((id: string) => redis.get<MapPresence>(`ss:room:${room}:presence:${id}`)),
+    allMembers.map((id: string) => redis.get<MapPresence>(`ss:room:${room}:presence:${id}`)),
   );
   const stale: string[] = [];
   const current: MapPresence[] = [];
   values.forEach((value: MapPresence | null, index: number) => {
     if (value) current.push(value);
-    else stale.push(members[index]);
+    else stale.push(allMembers[index]);
   });
-  if (stale.length) await redis.srem(`ss:room:${room}:members`, ...stale);
+  if (stale.length) {
+    await Promise.all([
+      redis.srem(`ss:room:${room}:members`, ...stale),
+      redis.srem(`ss:room:${room}:persistent-members`, ...stale),
+    ]);
+  }
   return current;
 }
 
