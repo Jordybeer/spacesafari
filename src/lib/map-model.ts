@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { parseFestivalStartParam } from "./festival-links";
 import { DEFAULT_FESTIVAL_ID, festivalStoragePrefix } from "./festivals";
 import { getRedis } from "./storage";
 import type { TelegramUser } from "./telegram";
@@ -58,12 +59,12 @@ export function privateRoomToken(chatId: string | number): string {
 }
 
 export function hasGroupRoom(data: ValidatedMiniAppData): boolean {
-  return Boolean(data.startParam?.match(/^room_[A-Za-z0-9_-]{20,32}$/) || data.chatInstance);
+  return Boolean(parseFestivalStartParam(data.startParam).roomToken || data.chatInstance);
 }
 
 export function roomFor(data: ValidatedMiniAppData, mode: RoomMode): string {
   if (mode === "public") return "public";
-  const directRoom = data.startParam?.match(/^room_([A-Za-z0-9_-]{20,32})$/)?.[1];
+  const directRoom = parseFestivalStartParam(data.startParam).roomToken;
   if (directRoom) return `g_${directRoom}`;
   if (data.chatInstance) return `g_${shortHash(data.chatInstance)}`;
   return `u_${data.user.id}`;
