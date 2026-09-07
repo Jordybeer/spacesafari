@@ -12,6 +12,8 @@ type SignedPayload = { exp: number };
 export type WebSession = {
   exp: number;
   user: TelegramUser;
+  provider?: "telegram" | "whatsapp";
+  roomToken?: string;
 };
 
 export type TelegramOAuthFlow = {
@@ -74,7 +76,33 @@ function cookie(name: string, value: string, maxAge: number): string {
 
 export function createWebSessionCookie(user: TelegramUser): string {
   const now = Math.floor(Date.now() / 1000);
-  return cookie(WEB_SESSION_COOKIE, signPayload({ exp: now + WEB_SESSION_SECONDS, user }), WEB_SESSION_SECONDS);
+  return cookie(
+    WEB_SESSION_COOKIE,
+    signPayload({ exp: now + WEB_SESSION_SECONDS, user, provider: "telegram" as const }),
+    WEB_SESSION_SECONDS,
+  );
+}
+
+export function createWhatsAppGuestSession(roomToken: string): { user: TelegramUser; cookie: string } {
+  const now = Math.floor(Date.now() / 1000);
+  const suffix = crypto.randomBytes(2).toString("hex").toUpperCase();
+  const user: TelegramUser = {
+    id: -crypto.randomInt(1_000_000_000, 2_000_000_000),
+    first_name: `Safari ${suffix}`,
+  };
+  return {
+    user,
+    cookie: cookie(
+      WEB_SESSION_COOKIE,
+      signPayload({
+        exp: now + WEB_SESSION_SECONDS,
+        user,
+        provider: "whatsapp" as const,
+        roomToken,
+      }),
+      WEB_SESSION_SECONDS,
+    ),
+  };
 }
 
 export function readWebSession(request: Request): WebSession | null {
