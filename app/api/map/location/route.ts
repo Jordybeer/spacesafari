@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
+import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { MAX_PRESENCE_TTL_SECONDS, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isNearVenue } from "@/src/lib/venue";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -14,25 +14,30 @@ const LocationSchema = z.object({
   horizontalAccuracy: z.number().nonnegative().max(10_000).nullable().optional(),
 });
 
+const AuthFields = {
+  initData: z.string().min(1).optional(),
+  roomToken: z.string().optional(),
+  mode: z.enum(["group", "public"]),
+};
+
 const RequestSchema = z.discriminatedUnion("action", [
   z.object({
     action: z.literal("update"),
-    initData: z.string().min(1),
-    mode: z.enum(["group", "public"]),
+    ...AuthFields,
     location: LocationSchema,
     ttlSeconds: z.number().int().min(60).max(MAX_PRESENCE_TTL_SECONDS).optional(),
   }),
   z.object({
     action: z.literal("stop"),
-    initData: z.string().min(1),
-    mode: z.enum(["group", "public"]),
+    ...AuthFields,
   }),
 ]);
 
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const data = validateTelegramInitData(input.initData);
+    const roomToken = normalizeRoomToken(input.roomToken);
+    const data = requireMapAuth(request, input.initData, roomToken);
     const room = roomFor(data, input.mode);
 
     if (!isRedisConfigured()) {
