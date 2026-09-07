@@ -191,8 +191,9 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
     return;
   }
 
+  let created: Awaited<ReturnType<typeof finalizePendingFestival>> | null = null;
   try {
-    const created = await finalizePendingFestival(pending, { id: shared.chat_id, title: shared.title });
+    created = await finalizePendingFestival(pending, { id: shared.chat_id, title: shared.title });
     let festival = created.festival;
     try {
       const invite = await createChatInviteLink(shared.chat_id, `Ginder · ${festival.name}`);
@@ -206,9 +207,22 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
       reply_markup: { remove_keyboard: true },
     });
   } catch (error) {
-    await releaseCreationSlot(userId);
     console.error("Festival group linking failed", error);
-    await sendMessage(message.chat.id, "Koppelen lukte niet. Er is niets van je 7-dagenlimiet verbruikt; probeer /festival opnieuw.", {
+    if (!created) {
+      await releaseCreationSlot(userId);
+      await sendMessage(message.chat.id, "Koppelen lukte niet. Er is niets van je 7-dagenlimiet verbruikt; probeer /festival opnieuw.", {
+        reply_markup: { remove_keyboard: true },
+      });
+      return;
+    }
+
+    const recoveryUrl = setupUrl(created.festival, created.setupToken);
+    await sendMessage(message.chat.id, [
+      `⚠️ ${created.festival.name} is wel aangemaakt, maar de onboarding in de groep liep vast.`,
+      "Je 7-dagenlimiet blijft daarom correct actief.",
+      "Je kunt de festivalsetup hier verderzetten:",
+      recoveryUrl,
+    ].join("\n"), {
       reply_markup: { remove_keyboard: true },
     });
   }
