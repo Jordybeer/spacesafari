@@ -42,8 +42,12 @@ export async function POST(request: Request) {
     const input = RequestSchema.parse(await request.json());
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = requireMapAuth(request, input.initData, roomToken);
-    const launchFestival = parseFestivalStartParam(data.startParam).selector;
-    const festival = await requireResolvedFestivalDefinition(input.festivalId ?? launchFestival ?? DEFAULT_FESTIVAL_ID);
+    const launchFestival = data.source === "miniapp"
+      ? parseFestivalStartParam(data.startParam).selector
+      : null;
+    const festival = await requireResolvedFestivalDefinition(
+      launchFestival ?? input.festivalId ?? DEFAULT_FESTIVAL_ID,
+    );
     const room = roomFor(data, input.mode);
 
     if (!isRedisConfigured()) {
