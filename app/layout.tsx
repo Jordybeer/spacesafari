@@ -5,9 +5,9 @@ import "./globals.css";
 import "./telegram-viewport.css";
 
 export const metadata: Metadata = {
-  title: "Space Safari Assistant",
-  description: "Unofficial community companion for Space Safari 2026",
-  applicationName: "Space Safari Assistant",
+  title: "Ginder",
+  description: "Festivalkaart, timetable en opt-in live groepslocaties.",
+  applicationName: "Ginder",
   manifest: "/manifest.webmanifest",
   icons: { icon: "/festival-map.jpg" },
 };
