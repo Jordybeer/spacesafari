@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
+import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
 import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
 import { projectPresence } from "@/src/lib/map-projection";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -9,17 +9,22 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 const RequestSchema = z.object({
-  initData: z.string().min(1),
-  mode: z.enum(["group", "public"]).default("group"),
+  initData: z.string().min(1).optional(),
+  roomToken: z.string().optional(),
+  mode: z.enum(["group", "public"]).default("public"),
 });
 
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const data = validateTelegramInitData(input.initData);
-    const room = roomFor(data, input.mode);
-    const storageReady = isRedisConfigured();
+    const roomToken = normalizeRoomToken(input.roomToken);
+    const data = optionalMapAuth(request, input.initData, roomToken);
+    if (input.mode === "group" && !data) {
+      return NextResponse.json({ error: "Log in met Telegram om de groepskaart te openen" }, { status: 401 });
+    }
 
+    const room = data ? roomFor(data, input.mode) : "public";
+    const storageReady = isRedisConfigured();
     const [anchors, rawPresence] = storageReady
       ? await Promise.all([listAnchors(), listPresence(room)])
       : [[], []];
@@ -41,15 +46,16 @@ export async function POST(request: Request) {
       room,
       mode: input.mode,
       storageReady,
-      groupAvailable: hasGroupRoom(data),
-      chatType: data.chatType ?? null,
-      user: {
+      groupAvailable: data ? hasGroupRoom(data) : false,
+      chatType: data?.chatType ?? null,
+      authSource: data?.source ?? null,
+      user: data ? {
         id: data.user.id,
         firstName: data.user.first_name,
         username: data.user.username ?? null,
         photoUrl: data.user.photo_url ?? null,
-      },
-      admin: isMapAdmin(data.user.id),
+      } : null,
+      admin: data ? isMapAdmin(data.user.id) : false,
       anchorCount: anchors.length,
       anchors: anchors.map((anchor) => ({
         id: anchor.id,
@@ -66,6 +72,6 @@ export async function POST(request: Request) {
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
-    return NextResponse.json({ error: message }, { status: 401 });
+    return NextResponse.json({ error: message }, { status: 400 });
   }
 }
