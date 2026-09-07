@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
-import { getGroupMeetPoint, listGroupTentPoints } from "@/src/lib/group-tools";
-import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor, type MapPresence } from "@/src/lib/map-model";
+import { getGroupMeetPoint, getGroupMeetStatuses, listGroupTentPoints } from "@/src/lib/group-tools";
+import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
 import { projectPresence } from "@/src/lib/map-projection";
 import { isRedisConfigured } from "@/src/lib/storage";
 
@@ -34,31 +34,14 @@ export async function POST(request: Request) {
           input.mode === "group" ? listGroupTentPoints(room) : Promise.resolve([]),
         ])
       : [[], [], null, []];
+    const meetStatuses = meet ? await getGroupMeetStatuses(room, meet.id) : [];
+    const statusByUserId = new Map(meetStatuses.map((status) => [status.userId, status.status]));
 
-    const markerTime = new Date().toISOString();
-    const groupMarkers: MapPresence[] = [];
-    if (meet) {
-      groupMarkers.push({
-        userId: -1,
-        displayName: `📍 Meet · ${meet.name}`,
-        latitude: meet.latitude,
-        longitude: meet.longitude,
-        horizontalAccuracy: null,
-        updatedAt: markerTime,
-      });
-    }
-    tents.forEach((tent, index) => {
-      groupMarkers.push({
-        userId: -(1000 + index),
-        displayName: `⛺ Tent · ${tent.displayName}`,
-        latitude: tent.latitude,
-        longitude: tent.longitude,
-        horizontalAccuracy: null,
-        updatedAt: markerTime,
-      });
-    });
-
-    const projected = projectPresence([...rawPresence, ...groupMarkers], anchors).map((member) => ({
+    const ownVisible = input.mode !== "group"
+      || !data
+      || rawPresence.some((member) => member.userId === data.user.id);
+    const visiblePresence = ownVisible ? rawPresence : [];
+    const projected = projectPresence(visiblePresence, anchors).map((member) => ({
       userId: member.userId,
       displayName: member.displayName,
       username: member.username,
@@ -70,13 +53,16 @@ export async function POST(request: Request) {
       mapX: member.mapX,
       mapY: member.mapY,
       simulated: member.simulated ?? false,
+      meetStatus: statusByUserId.get(member.userId) ?? null,
     }));
 
+    const serverTime = new Date().toISOString();
     return NextResponse.json({
       room,
       mode: input.mode,
       storageReady,
       groupAvailable: data ? hasGroupRoom(data) : false,
+      groupLocationsLocked: input.mode === "group" && Boolean(data) && !ownVisible,
       chatType: data?.chatType ?? null,
       authSource: data?.source ?? null,
       user: data ? {
@@ -98,7 +84,26 @@ export async function POST(request: Request) {
         createdAt: anchor.createdAt,
       })),
       members: projected,
-      serverTime: markerTime,
+      meet: meet ? {
+        id: meet.id,
+        name: meet.name,
+        latitude: meet.latitude,
+        longitude: meet.longitude,
+        createdByName: meet.createdByName,
+        createdAt: meet.createdAt,
+        expiresAt: meet.expiresAt,
+        goingCount: meetStatuses.filter((status) => status.status === "going").length,
+        arrivedCount: meetStatuses.filter((status) => status.status === "arrived").length,
+      } : null,
+      tents: tents.map((tent) => ({
+        userId: tent.userId,
+        displayName: tent.displayName,
+        username: tent.username ?? null,
+        latitude: tent.latitude,
+        longitude: tent.longitude,
+        createdAt: tent.createdAt,
+      })),
+      serverTime,
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
