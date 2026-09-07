@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
+import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import type { TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
@@ -26,7 +27,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    await routeTelegramUpdate(update);
+    if (!(await routeGroupCompanionUpdate(update))) {
+      await routeTelegramUpdate(update);
+    }
     return NextResponse.json({ ok: true });
   } catch (error) {
     console.error("Telegram update failed", error);

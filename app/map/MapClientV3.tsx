@@ -1,12 +1,16 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import FestivalGeoMap, { type GeoMember } from "./FestivalGeoMap";
+import FestivalGeoMap, {
+  type GeoMember,
+  type GeoMeetPoint,
+  type GeoTentPoint,
+} from "./FestivalGeoMap";
 import type { GeoAnchor } from "@/src/lib/map-georef";
 import styles from "./MapClientV2.module.css";
 
 type RoomMode = "group" | "public";
-type ShareDuration = 900 | 1800 | 3600 | 7200 | 604800;
+type ShareDuration = 300 | 600 | 1800 | 3600 | 7200 | 604800;
 
 type LocationFix = {
   latitude: number;
@@ -32,6 +36,7 @@ type Session = {
   mode: RoomMode;
   storageReady: boolean;
   groupAvailable: boolean;
+  groupLocationsLocked: boolean;
   chatType: string | null;
   authSource: "miniapp" | "web" | null;
   user: SessionUser | null;
@@ -39,6 +44,8 @@ type Session = {
   anchorCount: number;
   anchors: Anchor[];
   members: Member[];
+  meet: GeoMeetPoint | null;
+  tents: GeoTentPoint[];
   serverTime: string;
 };
 
@@ -82,17 +89,18 @@ declare global {
   }
 }
 
-const SESSION_CACHE = "space-safari-map-session-v4";
+const SESSION_CACHE = "space-safari-map-session-v5";
 const LIVE_INTERVAL_MS = 25_000;
 const POLL_INTERVAL_MS = 15_000;
+const PUBLIC_TTL_SECONDS: ShareDuration = 300;
 const CONSTANT_TTL_SECONDS: ShareDuration = 604800;
 const ROOM_TOKEN_RE = /^[A-Za-z0-9_-]{20,32}$/;
-const SHARE_DURATIONS: { label: string; seconds: ShareDuration }[] = [
-  { label: "15m", seconds: 900 },
-  { label: "30m", seconds: 1800 },
-  { label: "1u", seconds: 3600 },
-  { label: "2u", seconds: 7200 },
-  { label: "∞", seconds: CONSTANT_TTL_SECONDS },
+const GROUP_SHARE_DURATIONS: { label: string; seconds: ShareDuration }[] = [
+  { label: "10 min", seconds: 600 },
+  { label: "30 min", seconds: 1800 },
+  { label: "1 uur", seconds: 3600 },
+  { label: "2 uur", seconds: 7200 },
+  { label: "Tot ik stop", seconds: CONSTANT_TTL_SECONDS },
 ];
 
 async function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -159,7 +167,7 @@ export default function MapClientV3() {
   const [error, setError] = useState<string | null>(null);
   const [sharing, setSharing] = useState(false);
   const [liveSharing, setLiveSharing] = useState(false);
-  const [shareDuration, setShareDuration] = useState<ShareDuration>(1800);
+  const [shareDuration, setShareDuration] = useState<ShareDuration>(600);
   const [shareUntil, setShareUntil] = useState<number | null>(null);
   const [showNames, setShowNames] = useState(true);
   const [lastOwnFix, setLastOwnFix] = useState<LocationFix | null>(null);
@@ -174,7 +182,7 @@ export default function MapClientV3() {
     ...(initData ? { initData } : {}),
     ...(roomToken ? { roomToken } : {}),
   }), [initData, roomToken]);
-
+  const effectiveShareDuration: ShareDuration = mode === "public" ? PUBLIC_TTL_SECONDS : shareDuration;
   const cacheKey = `${SESSION_CACHE}:${mode}:${roomToken ?? "none"}`;
 
   const refresh = useCallback(async (quiet = false) => {
@@ -320,7 +328,7 @@ export default function MapClientV3() {
   const shareOnce = async () => {
     setError(null);
     try {
-      await updateOwnLocation(shareDuration);
+      await updateOwnLocation(effectiveShareDuration);
       window.Telegram?.WebApp?.HapticFeedback?.impactOccurred?.("medium");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Locatie delen mislukte.");
@@ -332,13 +340,13 @@ export default function MapClientV3() {
       void stopSharing();
       return;
     }
-    setShareUntil(shareDuration === CONSTANT_TTL_SECONDS ? null : Date.now() + shareDuration * 1000);
+    setShareUntil(effectiveShareDuration === CONSTANT_TTL_SECONDS ? null : Date.now() + effectiveShareDuration * 1000);
     setLiveSharing(true);
   };
 
   const chooseDuration = (seconds: ShareDuration) => {
     setShareDuration(seconds);
-    if (liveSharing) {
+    if (liveSharing && mode === "group") {
       setShareUntil(seconds === CONSTANT_TTL_SECONDS ? null : Date.now() + seconds * 1000);
     }
   };
@@ -442,7 +450,9 @@ export default function MapClientV3() {
   const freshMembers = useMemo(() => session?.members ?? [], [session]);
   const calibrated = (session?.anchorCount ?? 0) >= 2;
   const me = freshMembers.find((member) => member.userId === session?.user?.id);
-  const selectedDurationLabel = SHARE_DURATIONS.find((item) => item.seconds === shareDuration)?.label ?? "30m";
+  const selectedDurationLabel = mode === "public"
+    ? "5m"
+    : GROUP_SHARE_DURATIONS.find((item) => item.seconds === shareDuration)?.label ?? "10 min";
   const returnTo = roomToken ? `/map?room=${encodeURIComponent(roomToken)}` : "/map";
   const loginHref = `/api/auth/telegram/start?returnTo=${encodeURIComponent(returnTo)}`;
 
@@ -470,6 +480,11 @@ export default function MapClientV3() {
           Ingelogd als {session.user.username ? `@${session.user.username}` : session.user.firstName}. <button className={styles.stopCompact} onClick={() => void logout()}>Uitloggen</button>
         </div>
       )}
+      {mode === "group" && session?.groupLocationsLocked && (
+        <div className={styles.infoBanner}>
+          🔒 Deel je eigen locatie om live groepsleden te zien. Meeting points en tentplekken blijven zichtbaar.
+        </div>
+      )}
 
       <section className={`${styles.mapCard} ${styles.geoMapCard}`}>
         <div className={styles.mapTopbar}>
@@ -485,6 +500,8 @@ export default function MapClientV3() {
         <FestivalGeoMap
           anchors={session?.anchors ?? []}
           members={freshMembers}
+          meet={session?.meet ?? null}
+          tents={session?.tents ?? []}
           ownUserId={session?.user?.id}
           ownFix={lastOwnFix}
           showNames={showNames}
@@ -495,19 +512,22 @@ export default function MapClientV3() {
 
       {session?.user ? (
         <section className={styles.controlDock} aria-label="Locatie delen">
-          <div className={styles.shareDurations} aria-label="Duur locatie delen">
-            {SHARE_DURATIONS.map((item) => (
-              <button
-                type="button"
-                key={item.seconds}
-                className={shareDuration === item.seconds ? styles.activeDuration : ""}
-                onClick={() => chooseDuration(item.seconds)}
-                aria-pressed={shareDuration === item.seconds}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+          {mode === "group" && (
+            <div className={styles.shareDurations} aria-label="Duur locatie delen" style={{ display: "flex", alignItems: "center" }}>
+              <label style={{ display: "flex", width: "100%", alignItems: "center", gap: 8 }}>
+                <span style={{ flex: "0 0 auto", fontSize: 10, fontWeight: 900, color: "var(--cream-dim)" }}>Delen voor</span>
+                <select
+                  className={styles.textInput}
+                  value={shareDuration}
+                  onChange={(event) => chooseDuration(Number(event.target.value) as ShareDuration)}
+                  aria-label="Duur groepslocatie"
+                  style={{ minHeight: 34, height: 34, paddingTop: 0, paddingBottom: 0 }}
+                >
+                  {GROUP_SHARE_DURATIONS.map((item) => <option key={item.seconds} value={item.seconds}>{item.label}</option>)}
+                </select>
+              </label>
+            </div>
+          )}
           <button className={styles.primaryButton} disabled={loading || session.storageReady === false} onClick={() => void shareOnce()}>
             📍 {sharing || me ? "Bijwerken" : "Deel locatie"}
           </button>
@@ -549,7 +569,7 @@ export default function MapClientV3() {
             <button className={styles.secondaryButton} onClick={() => void beginCalibration()}>1 · Neem huidige GPS</button>
             {calibrationFix && <div className={styles.calibrationHint}>GPS vast{calibrationFix.horizontalAccuracy ? ` op ±${Math.round(calibrationFix.horizontalAccuracy)} m` : ""}. Tik nu exact dezelfde plek hieronder.</div>}
             <div ref={calibrationRef} className={`${styles.calibrationImage} ${calibrationFix ? styles.calibrating : ""}`} onClick={handleCalibrationTap}>
-              <img src="/festival-map.jpg?v=3" alt="" draggable={false} />
+              <img src="/festival-map-original.png?v=4" alt="" draggable={false} />
               {session.anchors.map((anchor) => <span key={anchor.id} className={styles.anchorMarker} style={{ left: `${anchor.mapX * 100}%`, top: `${anchor.mapY * 100}%` }} />)}
               {calibrationPoint && <span className={styles.calibrationTarget} style={{ left: `${calibrationPoint.x * 100}%`, top: `${calibrationPoint.y * 100}%` }} />}
             </div>

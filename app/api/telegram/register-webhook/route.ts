@@ -19,9 +19,6 @@ async function telegram(method: string, body: Record<string, unknown> = {}) {
 }
 
 export async function POST(request: Request) {
-  // Keep WEBHOOK_ADMIN_SECRET as an optional override, but don't force a second
-  // secret during setup. TELEGRAM_WEBHOOK_SECRET is already a strong server-side
-  // secret and is never exposed by this endpoint.
   const configuredSecret = process.env.WEBHOOK_ADMIN_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!configuredSecret) {
     return NextResponse.json({ error: "TELEGRAM_WEBHOOK_SECRET is not configured" }, { status: 503 });
@@ -46,15 +43,17 @@ export async function POST(request: Request) {
       commands: [
         { command: "start", description: "Open Space Safari Assistant" },
         { command: "menu", description: "Toon het festivalmenu" },
-        { command: "wie", description: "Wie draait er nu?" },
-        { command: "straks", description: "Sets die binnen 60 min starten" },
+        { command: "timetable", description: "Nu + wat start binnen 60 min" },
+        { command: "live", description: "Wie draait er nu?" },
+        { command: "meet", description: "Maak een groepsafspraak" },
+        { command: "tent", description: "Bewaar je huidige tentplek" },
+        { command: "group", description: "Toon groepsstatus" },
+        { command: "map", description: "Festivalkaart + live kaart" },
         { command: "programma", description: "Zoek een artiest" },
         { command: "ping", description: "Melding 15 min voor een artiest" },
         { command: "pings", description: "Mijn actieve meldingen" },
         { command: "unping", description: "Verwijder een melding" },
-        { command: "meet", description: "Maak een groepsafspraak" },
-        { command: "tent", description: "Bewaar je huidige tentplek" },
-        { command: "map", description: "Festivalkaart + live kaart" },
+        { command: "straks", description: "Sets die binnen 60 min starten" },
         { command: "id", description: "Toon mijn Telegram user ID" },
         { command: "help", description: "Toon alle commando's" },
       ],
