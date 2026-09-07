@@ -535,11 +535,11 @@ export default function MapClientV3() {
         <details className={styles.adminCard}>
           <summary>📍 Kalibratie · {session.anchorCount} ankers</summary>
           <div className={styles.adminBody}>
-            <div className={styles.infoBanner}>Testen van thuis: alleen jouw admin-account kan een gesimuleerde festivalpositie plaatsen. Die verloopt automatisch na 10 minuten en staat als testlocatie in de tooltip.</div>
+            <div className={styles.infoBanner}>Testen van thuis: alleen jouw admin-account kan een gesimuleerde festivalpositie plaatsen. Die blijft staan totdat je hem zelf verwijdert en staat als testlocatie in de tooltip.</div>
             {me?.simulated ? (
               <button className={styles.secondaryButton} disabled={testLocationBusy} onClick={() => void setTemporaryTestLocation(false)}>🧪 Verwijder testlocatie</button>
             ) : (
-              <button className={styles.secondaryButton} disabled={testLocationBusy || !session.anchorCount} onClick={() => void setTemporaryTestLocation(true)}>🧪 Test mij 10 min bij Nebula</button>
+              <button className={styles.secondaryButton} disabled={testLocationBusy || !session.anchorCount} onClick={() => void setTemporaryTestLocation(true)}>🧪 Test mij bij Nebula</button>
             )}
             <p>Loop naar een herkenbaar punt, neem je GPS op en tik daarna dezelfde plek op de festivalkaart.</p>
             <input className={styles.textInput} list="anchor-suggestions-v3" value={anchorName} onChange={(event) => setAnchorName(event.target.value)} placeholder="Naam, bv. Galaxy" />
