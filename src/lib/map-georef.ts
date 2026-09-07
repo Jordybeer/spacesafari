@@ -9,8 +9,8 @@ export interface GeoAnchor {
 
 export type LngLatTuple = [number, number];
 
-const FESTIVAL_IMAGE_WIDTH = 640;
-const FESTIVAL_IMAGE_HEIGHT = 800;
+const DEFAULT_FESTIVAL_IMAGE_WIDTH = 640;
+const DEFAULT_FESTIVAL_IMAGE_HEIGHT = 800;
 const METERS_PER_DEGREE_LAT = 111_320;
 
 export function mapPointToLngLat(
@@ -23,17 +23,21 @@ export function mapPointToLngLat(
 }
 
 /**
- * Fit the illustrated festival image to GPS with a reflected similarity transform.
+ * Fit an illustrated festival image to GPS with a reflected similarity transform.
  *
- * Calibration coordinates use screen/image space (Y grows downward), while latitude
- * grows northward. A normal rotation-only similarity therefore flips the image north/
- * south. An unconstrained affine fit fixes that when anchors are well spread, but the
- * real festival anchors are mostly along the long east-west stage/camping strip and an
- * affine extrapolation can become numerically huge. This fit deliberately keeps one
- * global scale + rotation + the required reflection, and uses every anchor.
+ * Anchor mapX/mapY values are normalized, but actual image dimensions still matter:
+ * a 1:1 image and a 4:5 image describe different pixel geometry. Keep Space Safari's
+ * historical 640x800 dimensions as defaults while allowing every Ginder festival to
+ * use its own source artwork dimensions.
  */
-function festivalPointToLngLat(mapX: number, mapY: number, anchors: GeoAnchor[]): LngLatTuple | null {
-  if (anchors.length < 2) return null;
+function festivalPointToLngLat(
+  mapX: number,
+  mapY: number,
+  anchors: GeoAnchor[],
+  imageWidth: number,
+  imageHeight: number,
+): LngLatTuple | null {
+  if (anchors.length < 2 || imageWidth <= 0 || imageHeight <= 0) return null;
 
   const lat0 = anchors.reduce((sum, anchor) => sum + anchor.latitude, 0) / anchors.length;
   const lon0 = anchors.reduce((sum, anchor) => sum + anchor.longitude, 0) / anchors.length;
@@ -41,8 +45,8 @@ function festivalPointToLngLat(mapX: number, mapY: number, anchors: GeoAnchor[])
   if (!Number.isFinite(metersPerDegreeLon) || Math.abs(metersPerDegreeLon) < 1) return null;
 
   const points = anchors.map((anchor) => ({
-    u: anchor.mapX * FESTIVAL_IMAGE_WIDTH,
-    v: anchor.mapY * FESTIVAL_IMAGE_HEIGHT,
+    u: anchor.mapX * imageWidth,
+    v: anchor.mapY * imageHeight,
     x: (anchor.longitude - lon0) * metersPerDegreeLon,
     y: (anchor.latitude - lat0) * METERS_PER_DEGREE_LAT,
   }));
@@ -76,8 +80,8 @@ function festivalPointToLngLat(mapX: number, mapY: number, anchors: GeoAnchor[])
   const scaleSquared = a * a + b * b;
   if (!Number.isFinite(scaleSquared) || scaleSquared < 1e-8) return null;
 
-  const u = mapX * FESTIVAL_IMAGE_WIDTH - center.u;
-  const v = mapY * FESTIVAL_IMAGE_HEIGHT - center.v;
+  const u = mapX * imageWidth - center.u;
+  const v = mapY * imageHeight - center.v;
   const x = center.x + a * u + b * v;
   const y = center.y + b * u - a * v;
 
@@ -86,13 +90,17 @@ function festivalPointToLngLat(mapX: number, mapY: number, anchors: GeoAnchor[])
   return Number.isFinite(longitude) && Number.isFinite(latitude) ? [longitude, latitude] : null;
 }
 
-export function festivalImageCorners(anchors: GeoAnchor[]): [LngLatTuple, LngLatTuple, LngLatTuple, LngLatTuple] | null {
-  if (anchors.length < 2) return null;
+export function festivalImageCorners(
+  anchors: GeoAnchor[],
+  imageWidth = DEFAULT_FESTIVAL_IMAGE_WIDTH,
+  imageHeight = DEFAULT_FESTIVAL_IMAGE_HEIGHT,
+): [LngLatTuple, LngLatTuple, LngLatTuple, LngLatTuple] | null {
+  if (anchors.length < 2 || imageWidth <= 0 || imageHeight <= 0) return null;
   const corners = [
-    festivalPointToLngLat(0, 0, anchors),
-    festivalPointToLngLat(1, 0, anchors),
-    festivalPointToLngLat(1, 1, anchors),
-    festivalPointToLngLat(0, 1, anchors),
+    festivalPointToLngLat(0, 0, anchors, imageWidth, imageHeight),
+    festivalPointToLngLat(1, 0, anchors, imageWidth, imageHeight),
+    festivalPointToLngLat(1, 1, anchors, imageWidth, imageHeight),
+    festivalPointToLngLat(0, 1, anchors, imageWidth, imageHeight),
   ];
   if (corners.some((corner) => !corner)) return null;
   return corners as [LngLatTuple, LngLatTuple, LngLatTuple, LngLatTuple];
