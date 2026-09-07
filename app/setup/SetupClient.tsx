@@ -84,14 +84,14 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
       href: readiness.redis ? undefined : "https://vercel.com/marketplace/upstash/upstash-kv",
       action: readiness.redis ? undefined : "Koppel Redis in Vercel",
     },
-    { label: "GPS-kalibratie admin", ready: readiness.mapAdmin, missing: "Telegram user ID allowlist" },
+    { label: "Globale kaartadmin", ready: readiness.mapAdmin, missing: "Telegram user ID allowlist", detail: readiness.mapAdmin ? "ingebouwde festivalkaart" : undefined },
   ];
 
   return (
     <main className="landing-shell">
       <section className="festival-card landing-card">
         <div className="eyebrow">BOT SETUP</div>
-        <div className="wordmark">SPACE<br />SAFARI</div>
+        <div className="wordmark">GINDER</div>
         <p className="lede">Runtime readiness</p>
         <div style={{ display: "grid", gap: 8, width: "100%", marginBottom: 18 }}>
           {rows.map((row) => (
@@ -111,7 +111,7 @@ export default function SetupClient({ readiness }: { readiness: Readiness }) {
         </div>
         {!readiness.redis && (
           <p className="microcopy">
-            Kies in Vercel bij de Marketplace-installatie het project <strong>spacesafari</strong>. Redis zet de environment variables automatisch; deze pagina toont de nieuwe status na de redeploy. De pings gebruiken daarna Vercel Queues en hebben geen extra token nodig.
+            Kies in Vercel bij de Marketplace-installatie het project <strong>ginder</strong>. Redis zet de environment variables automatisch; deze pagina toont de nieuwe status na de redeploy. De pings gebruiken daarna Vercel Queues en hebben geen extra token nodig.
           </p>
         )}
 

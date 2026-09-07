@@ -42,7 +42,7 @@ export async function POST(request: Request) {
     await telegram("setMyCommands", {
       commands: [
         { command: "start", description: "Open Ginder" },
-        { command: "festival", description: "Maak een nieuw festival" },
+        { command: "festival", description: "Maak of beheer een festival" },
         { command: "menu", description: "Toon het festivalmenu" },
         { command: "timetable", description: "Nu + wat start binnen 60 min" },
         { command: "live", description: "Wie draait er nu?" },
