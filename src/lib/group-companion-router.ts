@@ -10,6 +10,7 @@ import {
   getFestivalSchedule,
   nextScheduleSets,
   performerEntries,
+  scheduleTime,
   upcomingScheduleSets,
   type FestivalScheduleEntry,
 } from "./festival-schedule";
@@ -23,6 +24,7 @@ import {
   type GroupMeetStatus,
 } from "./group-tools";
 import { listAnchors, listPresence, privateRoomToken } from "./map-model";
+import { createPing, deletePing, listPings } from "./pings";
 import {
   answerCallbackQuery,
   mapMiniAppUrl,
@@ -35,6 +37,7 @@ import {
 const MENU_PREFIX = "gc:";
 const MEET_PREFIX = "gm:";
 const STATUS_PREFIX = "gs:";
+const PING_PREFIX = "gcp:";
 
 function isGroupChat(chat: TelegramChat): boolean {
   return chat.type === "group" || chat.type === "supergroup";
@@ -170,7 +173,7 @@ async function showCustomProgram(chat: TelegramChat, festival: FestivalDefinitio
   await sendMessage(chat.id, matches.map((entry) => formatScheduleEntry(entry, festival.timezone)).join("\n\n"));
 }
 
-function shortAnchorKey(id: string): string {
+function shortKey(id: string): string {
   let hash = 2166136261;
   for (let index = 0; index < id.length; index += 1) {
     hash ^= id.charCodeAt(index);
@@ -179,9 +182,116 @@ function shortAnchorKey(id: string): string {
   return Math.abs(hash >>> 0).toString(36);
 }
 
+async function customSetFromShortKey(key: string, festival: FestivalDefinition): Promise<FestivalScheduleEntry | undefined> {
+  const schedule = await getFestivalSchedule(festival);
+  return performerEntries(schedule).find((entry) => shortKey(entry.id) === key);
+}
+
+async function createAndConfirmCustomPing(
+  chat: TelegramChat,
+  festival: FestivalDefinition,
+  entry: FestivalScheduleEntry,
+): Promise<void> {
+  const { ping, duplicate } = await createPing(String(chat.id), entry, festival.id, festival.timezone);
+  const notify = scheduleTime(ping.notifyAt, festival.timezone).toFormat("HH:mm");
+  await sendMessage(chat.id, [
+    duplicate ? "🔔 Deze ping stond al ingesteld" : "🔔 Ping ingesteld",
+    "",
+    entry.artist,
+    `${entry.stage} • ${scheduleTime(entry.startsAt, festival.timezone).toFormat("HH:mm")}–${scheduleTime(entry.endsAt, festival.timezone).toFormat("HH:mm")}`,
+    duplicate ? `Melding om ${notify}.` : `Ik stuur om ${notify} een bericht.`,
+  ].join("\n"));
+}
+
+async function pingCustomArtist(chat: TelegramChat, festival: FestivalDefinition, query: string): Promise<void> {
+  if (!query) {
+    await sendMessage(chat.id, "Gebruik: /ping <artiest>");
+    return;
+  }
+  const schedule = await getFestivalSchedule(festival);
+  const candidates = findFestivalSchedule(schedule, query)
+    .filter((entry) => Date.parse(entry.startsAt) > Date.now())
+    .slice(0, 8);
+  if (!candidates.length) {
+    await sendMessage(chat.id, `Geen toekomstige set gevonden voor “${query}”.`);
+    return;
+  }
+  if (candidates.length > 1) {
+    await sendMessage(chat.id, "Welke set bedoel je?", {
+      reply_markup: {
+        inline_keyboard: candidates.map((entry) => [{
+          text: `${entry.artist} · ${entry.stage} ${scheduleTime(entry.startsAt, festival.timezone).toFormat("HH:mm")}`,
+          callback_data: `${PING_PREFIX}${shortKey(entry.id)}`,
+        }]),
+      },
+    });
+    return;
+  }
+  await createAndConfirmCustomPing(chat, festival, candidates[0]);
+}
+
+async function listCustomPings(chat: TelegramChat, festival: FestivalDefinition): Promise<void> {
+  const pings = await listPings(String(chat.id), festival.id);
+  if (!pings.length) {
+    await sendMessage(chat.id, "🔕 Geen actieve artiestpings.");
+    return;
+  }
+  const schedule = await getFestivalSchedule(festival);
+  const byId = new Map(performerEntries(schedule).map((entry) => [entry.id, entry]));
+  const lines = pings.map((ping) => {
+    const entry = byId.get(ping.artistSetId);
+    return entry
+      ? `🔔 ${entry.artist} · ${entry.stage} · ${scheduleTime(entry.startsAt, festival.timezone).toFormat("HH:mm")}`
+      : null;
+  }).filter((line): line is string => Boolean(line));
+  await sendMessage(chat.id, lines.length ? ["Je actieve pings:", "", ...lines].join("\n") : "🔕 Geen actieve artiestpings.");
+}
+
+async function unpingCustomArtist(chat: TelegramChat, festival: FestivalDefinition, query: string): Promise<void> {
+  if (!query) {
+    await sendMessage(chat.id, "Gebruik: /unping <artiest>");
+    return;
+  }
+  const [pings, schedule] = await Promise.all([
+    listPings(String(chat.id), festival.id),
+    getFestivalSchedule(festival),
+  ]);
+  const q = query.trim().toLocaleLowerCase();
+  const byId = new Map(performerEntries(schedule).map((entry) => [entry.id, entry]));
+  const matches = pings.filter((ping) => {
+    const entry = byId.get(ping.artistSetId);
+    return entry ? entry.artist.toLocaleLowerCase().includes(q) || q.includes(entry.artist.toLocaleLowerCase()) : false;
+  });
+  if (!matches.length) {
+    await sendMessage(chat.id, `Geen actieve ping gevonden voor “${query}”.`);
+    return;
+  }
+  await Promise.all(matches.map((ping) => deletePing(String(chat.id), ping.artistSetId, festival.id)));
+  await sendMessage(chat.id, `🔕 ${matches.length} ping${matches.length === 1 ? "" : "s"} verwijderd.`);
+}
+
+async function handleCustomPingCallback(
+  callbackId: string,
+  chat: TelegramChat,
+  key: string,
+): Promise<void> {
+  const festival = await getFestivalForChat(chat.id);
+  if (festival.id === DEFAULT_FESTIVAL_ID) {
+    await answerCallbackQuery(callbackId, "Deze ping hoort niet bij dit festival.");
+    return;
+  }
+  const entry = await customSetFromShortKey(key, festival);
+  if (!entry || Date.parse(entry.startsAt) <= Date.now()) {
+    await answerCallbackQuery(callbackId, "Deze set is niet meer beschikbaar.");
+    return;
+  }
+  await answerCallbackQuery(callbackId, "Ping instellen…");
+  await createAndConfirmCustomPing(chat, festival, entry);
+}
+
 async function anchorFromShortKey(key: string, festivalId: string) {
   const anchors = await listAnchors(festivalId);
-  return anchors.find((anchor) => shortAnchorKey(anchor.id) === key);
+  return anchors.find((anchor) => shortKey(anchor.id) === key);
 }
 
 async function chooseMeetingPoint(chat: TelegramChat): Promise<void> {
@@ -199,7 +309,7 @@ async function chooseMeetingPoint(chat: TelegramChat): Promise<void> {
   for (let index = 0; index < Math.min(anchors.length, 10); index += 2) {
     rows.push(anchors.slice(index, index + 2).map((anchor) => ({
       text: `📍 ${anchor.name}`,
-      callback_data: `${MEET_PREFIX}${shortAnchorKey(anchor.id)}`,
+      callback_data: `${MEET_PREFIX}${shortKey(anchor.id)}`,
     })));
   }
   await sendMessage(chat.id, "📍 Waar spreken we af?", { reply_markup: { inline_keyboard: rows } });
@@ -358,6 +468,10 @@ async function handleMenuCallback(action: string, chat: TelegramChat, user: Tele
 
 export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise<boolean> {
   const callback = update.callback_query;
+  if (callback?.message && callback.data?.startsWith(PING_PREFIX)) {
+    await handleCustomPingCallback(callback.id, callback.message.chat, callback.data.slice(PING_PREFIX.length));
+    return true;
+  }
   if (callback?.message && callback.data?.startsWith(MENU_PREFIX)) {
     await handleMenuCallback(callback.data.slice(MENU_PREFIX.length), callback.message.chat, callback.from, callback.id);
     return true;
@@ -425,8 +539,18 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
         await showCustomProgram(message.chat, festival, commandArgs(raw));
         return true;
       }
-      await sendMessage(message.chat.id, `🔔 Artiestpings voor ${festival.name} komen in de volgende Ginder-stap. De timetable zelf werkt al.`);
-      return true;
+      if (command === "/ping") {
+        await pingCustomArtist(message.chat, festival, commandArgs(raw));
+        return true;
+      }
+      if (command === "/pings") {
+        await listCustomPings(message.chat, festival);
+        return true;
+      }
+      if (command === "/unping") {
+        await unpingCustomArtist(message.chat, festival, commandArgs(raw));
+        return true;
+      }
     }
   }
 
