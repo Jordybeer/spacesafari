@@ -1,0 +1,28 @@
+:root {
+  --ss-visible-height: var(--tg-viewport-stable-height, var(--tg-viewport-height, 100dvh));
+  --ss-safe-bottom: max(
+    var(--tg-safe-area-inset-bottom, 0px),
+    var(--tg-content-safe-area-inset-bottom, 0px),
+    env(safe-area-inset-bottom, 0px)
+  );
+}
+
+/*
+ * Telegram's CSS layout viewport can extend below the actually visible Mini App
+ * sheet on iOS. Pin the custom location dock to Telegram's stable visible
+ * viewport instead of `bottom: 0` on that larger layout viewport.
+ */
+main > section[aria-label="Locatie delen"],
+main > section[aria-label="Telegram login"] {
+  top: calc(var(--ss-visible-height) - var(--ss-safe-bottom) - 6px) !important;
+  bottom: auto !important;
+  transform: translate(-50%, -100%) !important;
+}
+
+/* The narrow layout has a third Stop row, so reserve its full dock height. */
+@media (max-width: 420px) {
+  main:has(> section[aria-label="Locatie delen"]),
+  main:has(> section[aria-label="Telegram login"]) {
+    padding-bottom: calc(146px + var(--ss-safe-bottom)) !important;
+  }
+}
