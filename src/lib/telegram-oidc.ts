@@ -90,7 +90,7 @@ export async function verifyTelegramIdToken(idToken: string, nonce: string): Pro
   const jwk = jwks.keys?.find((candidate) => candidate.kid === header.kid && candidate.kty === "RSA");
   if (!jwk) throw new Error("Telegram signing key not found");
 
-  const key = crypto.createPublicKey({ key: jwk, format: "jwk" });
+  const key = crypto.createPublicKey({ key: jwk as crypto.JsonWebKey, format: "jwk" });
   const signed = Buffer.from(`${encodedHeader}.${encodedClaims}`);
   const signature = Buffer.from(encodedSignature, "base64url");
   if (!crypto.verify("RSA-SHA256", signed, key, signature)) throw new Error("Invalid Telegram id_token signature");
