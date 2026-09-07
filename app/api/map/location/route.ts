@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
+import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { MAX_PRESENCE_TTL_SECONDS, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isNearFestival } from "@/src/lib/venue";
@@ -38,7 +39,7 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const festival = requireFestivalDefinition(input.festivalId);
+    const festival = await requireResolvedFestivalDefinition(input.festivalId);
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = requireMapAuth(request, input.initData, roomToken);
     const room = roomFor(data, input.mode);
