@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { parseFestivalStartParam } from "./festival-links";
 import {
   DEFAULT_FESTIVAL_ID,
   SPACE_SAFARI_2026,
@@ -205,7 +206,9 @@ export async function finalizePendingFestival(
 export async function getFestivalForChat(chatId: string | number): Promise<FestivalDefinition> {
   const festivalId = await getRedis().get<string>(chatFestivalKey(chatId));
   if (!festivalId) return SPACE_SAFARI_2026;
-  return (await resolveFestivalDefinition(festivalId)) ?? SPACE_SAFARI_2026;
+  const festival = await resolveFestivalDefinition(festivalId);
+  if (!festival) throw new Error("Festivalkoppeling is ongeldig.");
+  return festival;
 }
 
 export async function getCurrentFestivalForOwner(ownerTelegramId: number): Promise<PersistedFestival | null> {
@@ -252,9 +255,10 @@ export function setupStatusFor(input: {
   anchors: number;
   timetableReady?: boolean;
 }): FestivalSetupStatus {
-  if (!input.mapImageUrl || !Number.isFinite(input.venueCenter.latitude) || !Number.isFinite(input.venueCenter.longitude)) {
-    return "map";
-  }
+  const hasCenter = Number.isFinite(input.venueCenter.latitude)
+    && Number.isFinite(input.venueCenter.longitude)
+    && !(input.venueCenter.latitude === 0 && input.venueCenter.longitude === 0);
+  if (!input.mapImageUrl || !hasCenter) return "map";
   if (input.anchors < 2) return "anchors";
   return input.timetableReady ? "ready" : "timetable";
 }
@@ -266,21 +270,12 @@ export function setupUrl(festival: PersistedFestival, setupToken: string): strin
 }
 
 export function festivalMapStartParam(festival: FestivalDefinition, roomToken?: string): string {
-  if (festival.id === DEFAULT_FESTIVAL_ID && !roomToken) return "map";
+  if (festival.id === DEFAULT_FESTIVAL_ID) return roomToken ? `room_${roomToken}` : "map";
   const publicKey = "publicKey" in festival && typeof festival.publicKey === "string"
     ? festival.publicKey
-    : "ss26";
+    : null;
+  if (!publicKey) throw new Error("Festival heeft geen publieke selector.");
   return roomToken ? `fr_${publicKey}_${roomToken}` : `f_${publicKey}`;
 }
 
-export function parseFestivalStartParam(value?: string | null): { selector: string | null; roomToken: string | null } {
-  if (!value) return { selector: null, roomToken: null };
-  const roomOnly = value.match(/^room_([A-Za-z0-9_-]{20,32})$/);
-  if (roomOnly) return { selector: DEFAULT_FESTIVAL_ID, roomToken: roomOnly[1] };
-  if (value === "map" || value === "map_admin") return { selector: DEFAULT_FESTIVAL_ID, roomToken: null };
-  const festivalOnly = value.match(/^f_([A-Za-z0-9_-]{4,16})$/);
-  if (festivalOnly) return { selector: festivalOnly[1], roomToken: null };
-  const festivalRoom = value.match(/^fr_([A-Za-z0-9_-]{4,16})_([A-Za-z0-9_-]{20,32})$/);
-  if (festivalRoom) return { selector: festivalRoom[1], roomToken: festivalRoom[2] };
-  return { selector: null, roomToken: null };
-}
+export { parseFestivalStartParam };
