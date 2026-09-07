@@ -167,6 +167,7 @@ export default function MapClientV3() {
   const [calibrationPoint, setCalibrationPoint] = useState<{ x: number; y: number } | null>(null);
   const [anchorName, setAnchorName] = useState("");
   const [savingAnchor, setSavingAnchor] = useState(false);
+  const [testLocationBusy, setTestLocationBusy] = useState(false);
   const calibrationRef = useRef<HTMLDivElement>(null);
 
   const authPayload = useMemo(() => ({
@@ -364,6 +365,29 @@ export default function MapClientV3() {
     await refresh();
   };
 
+  const setTemporaryTestLocation = async (enabled: boolean) => {
+    if (!session?.admin || testLocationBusy) return;
+    setTestLocationBusy(true);
+    setError(null);
+    setLiveSharing(false);
+    setShareUntil(null);
+    setSharing(false);
+    setLastOwnFix(null);
+    try {
+      await postJson("/api/map/test-location", {
+        action: enabled ? "start" : "stop",
+        ...authPayload,
+        mode,
+        ...(enabled ? { anchorName: "Nebula" } : {}),
+      });
+      await refresh(true);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Testlocatie instellen mislukte.");
+    } finally {
+      setTestLocationBusy(false);
+    }
+  };
+
   const beginCalibration = async () => {
     setError(null);
     setCalibrationPoint(null);
@@ -511,6 +535,12 @@ export default function MapClientV3() {
         <details className={styles.adminCard}>
           <summary>📍 Kalibratie · {session.anchorCount} ankers</summary>
           <div className={styles.adminBody}>
+            <div className={styles.infoBanner}>Testen van thuis: alleen jouw admin-account kan een gesimuleerde festivalpositie plaatsen. Die verloopt automatisch na 10 minuten en staat als testlocatie in de tooltip.</div>
+            {me?.simulated ? (
+              <button className={styles.secondaryButton} disabled={testLocationBusy} onClick={() => void setTemporaryTestLocation(false)}>🧪 Verwijder testlocatie</button>
+            ) : (
+              <button className={styles.secondaryButton} disabled={testLocationBusy || !session.anchorCount} onClick={() => void setTemporaryTestLocation(true)}>🧪 Test mij 10 min bij Nebula</button>
+            )}
             <p>Loop naar een herkenbaar punt, neem je GPS op en tik daarna dezelfde plek op de festivalkaart.</p>
             <input className={styles.textInput} list="anchor-suggestions-v3" value={anchorName} onChange={(event) => setAnchorName(event.target.value)} placeholder="Naam, bv. Galaxy" />
             <datalist id="anchor-suggestions-v3">
