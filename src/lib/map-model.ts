@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { DEFAULT_FESTIVAL_ID, festivalStoragePrefix } from "./festivals";
 import { getRedis } from "./storage";
 import type { TelegramUser } from "./telegram";
 import type { ValidatedMiniAppData } from "./telegram-init-data";
@@ -42,6 +43,14 @@ function shortHash(value: string): string {
   return crypto.createHash("sha256").update(value).digest("base64url").slice(0, 22);
 }
 
+function roomStorageKey(festivalId: string, room: string, suffix: string): string {
+  return `${festivalStoragePrefix(festivalId)}:room:${room}:${suffix}`;
+}
+
+function anchorsStorageKey(festivalId: string): string {
+  return `${festivalStoragePrefix(festivalId)}:map:anchors`;
+}
+
 export function privateRoomToken(chatId: string | number): string {
   const secret = process.env.MAP_ROOM_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!secret) throw new Error("MAP_ROOM_SECRET or TELEGRAM_WEBHOOK_SECRET is not configured");
@@ -83,9 +92,14 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   latitude: number;
   longitude: number;
   horizontalAccuracy?: number | null;
-}, ttlSeconds = PRESENCE_TTL_SECONDS, options?: { simulated?: boolean; persistent?: boolean }): Promise<MapPresence> {
+}, ttlSeconds = PRESENCE_TTL_SECONDS, options?: {
+  simulated?: boolean;
+  persistent?: boolean;
+  festivalId?: string;
+}): Promise<MapPresence> {
   const redis = getRedis();
   const ttl = Math.max(60, Math.min(MAX_PRESENCE_TTL_SECONDS, Math.round(ttlSeconds)));
+  const festivalId = options?.festivalId ?? DEFAULT_FESTIVAL_ID;
   const presence: MapPresence = {
     userId: user.id,
     displayName: displayName(user),
@@ -97,9 +111,9 @@ export async function putPresence(room: string, user: TelegramUser, location: {
     updatedAt: new Date().toISOString(),
     ...(options?.simulated ? { simulated: true } : {}),
   };
-  const userKey = `ss:room:${room}:presence:${user.id}`;
-  const membersKey = `ss:room:${room}:members`;
-  const persistentMembersKey = `ss:room:${room}:persistent-members`;
+  const userKey = roomStorageKey(festivalId, room, `presence:${user.id}`);
+  const membersKey = roomStorageKey(festivalId, room, "members");
+  const persistentMembersKey = roomStorageKey(festivalId, room, "persistent-members");
 
   if (options?.persistent) {
     await Promise.all([
@@ -119,26 +133,35 @@ export async function putPresence(room: string, user: TelegramUser, location: {
   return presence;
 }
 
-export async function stopPresence(room: string, userId: number): Promise<void> {
+export async function stopPresence(
+  room: string,
+  userId: number,
+  festivalId = DEFAULT_FESTIVAL_ID,
+): Promise<void> {
   const redis = getRedis();
   await Promise.all([
-    redis.del(`ss:room:${room}:presence:${userId}`),
-    redis.srem(`ss:room:${room}:members`, String(userId)),
-    redis.srem(`ss:room:${room}:persistent-members`, String(userId)),
+    redis.del(roomStorageKey(festivalId, room, `presence:${userId}`)),
+    redis.srem(roomStorageKey(festivalId, room, "members"), String(userId)),
+    redis.srem(roomStorageKey(festivalId, room, "persistent-members"), String(userId)),
   ]);
 }
 
-export async function listPresence(room: string): Promise<MapPresence[]> {
+export async function listPresence(
+  room: string,
+  festivalId = DEFAULT_FESTIVAL_ID,
+): Promise<MapPresence[]> {
   const redis = getRedis();
+  const membersKey = roomStorageKey(festivalId, room, "members");
+  const persistentMembersKey = roomStorageKey(festivalId, room, "persistent-members");
   const [members, persistentMembers] = await Promise.all([
-    redis.smembers<string[]>(`ss:room:${room}:members`),
-    redis.smembers<string[]>(`ss:room:${room}:persistent-members`),
+    redis.smembers<string[]>(membersKey),
+    redis.smembers<string[]>(persistentMembersKey),
   ]);
   const allMembers = Array.from(new Set([...(members ?? []), ...(persistentMembers ?? [])]));
   if (!allMembers.length) return [];
 
   const values = await Promise.all(
-    allMembers.map((id: string) => redis.get<MapPresence>(`ss:room:${room}:presence:${id}`)),
+    allMembers.map((id: string) => redis.get<MapPresence>(roomStorageKey(festivalId, room, `presence:${id}`))),
   );
   const stale: string[] = [];
   const current: MapPresence[] = [];
@@ -148,20 +171,23 @@ export async function listPresence(room: string): Promise<MapPresence[]> {
   });
   if (stale.length) {
     await Promise.all([
-      redis.srem(`ss:room:${room}:members`, ...stale),
-      redis.srem(`ss:room:${room}:persistent-members`, ...stale),
+      redis.srem(membersKey, ...stale),
+      redis.srem(persistentMembersKey, ...stale),
     ]);
   }
   return current;
 }
 
-export async function listAnchors(): Promise<MapAnchor[]> {
+export async function listAnchors(festivalId = DEFAULT_FESTIVAL_ID): Promise<MapAnchor[]> {
   const redis = getRedis();
-  const all = await redis.hgetall<Record<string, MapAnchor>>("ss:map:anchors");
+  const all = await redis.hgetall<Record<string, MapAnchor>>(anchorsStorageKey(festivalId));
   return Object.values(all ?? {}).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-export async function saveAnchor(anchor: MapAnchor): Promise<void> {
+export async function saveAnchor(
+  anchor: MapAnchor,
+  festivalId = DEFAULT_FESTIVAL_ID,
+): Promise<void> {
   if (
     !Number.isFinite(anchor.latitude) ||
     !Number.isFinite(anchor.longitude) ||
@@ -170,9 +196,9 @@ export async function saveAnchor(anchor: MapAnchor): Promise<void> {
   ) {
     throw new Error("Invalid map anchor");
   }
-  await getRedis().hset("ss:map:anchors", { [anchor.id]: anchor });
+  await getRedis().hset(anchorsStorageKey(festivalId), { [anchor.id]: anchor });
 }
 
-export async function deleteAnchor(id: string): Promise<void> {
-  await getRedis().hdel("ss:map:anchors", id);
+export async function deleteAnchor(id: string, festivalId = DEFAULT_FESTIVAL_ID): Promise<void> {
+  await getRedis().hdel(anchorsStorageKey(festivalId), id);
 }
