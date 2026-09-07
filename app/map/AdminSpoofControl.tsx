@@ -103,9 +103,6 @@ export default function AdminSpoofControl() {
     setError(null);
     try {
       if (enabled) {
-        // Kill any regular/live GPS presence first. Reloading immediately after the
-        // spoof is stored also resets the Mini App's client-side live-location timer,
-        // so real home GPS cannot keep firing geofence errors over test mode.
         try {
           await postJson("/api/map/location", {
             action: "stop",
@@ -196,6 +193,22 @@ export default function AdminSpoofControl() {
       >
         {busy ? "bezig…" : simulated ? "Stop spoof" : "Spoof hier"}
       </button>
+
+      <a
+        href="/festival-setup"
+        style={{
+          display: "block",
+          marginTop: 7,
+          paddingTop: 7,
+          borderTop: "1px solid rgba(248,232,209,.14)",
+          color: "#ffd6b8",
+          textDecoration: "none",
+          fontWeight: 900,
+          textAlign: "center",
+        }}
+      >
+        🎪 Andere festivals
+      </a>
       {error && <div style={{ marginTop: 5, color: "#ffb9aa", lineHeight: 1.25 }}>{error}</div>}
     </aside>
   );
