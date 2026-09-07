@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { validateTelegramInitData } from "@/src/lib/telegram-init-data";
+import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { deleteAnchor, isMapAdmin, listAnchors, saveAnchor } from "@/src/lib/map-model";
 import { isNearVenue } from "@/src/lib/venue";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -9,7 +9,10 @@ import { isRedisConfigured } from "@/src/lib/storage";
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const BaseSchema = z.object({ initData: z.string().min(1) });
+const BaseSchema = z.object({
+  initData: z.string().min(1).optional(),
+  roomToken: z.string().optional(),
+});
 const RequestSchema = z.discriminatedUnion("action", [
   BaseSchema.extend({ action: z.literal("list") }),
   BaseSchema.extend({
@@ -27,7 +30,7 @@ const RequestSchema = z.discriminatedUnion("action", [
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
-    const data = validateTelegramInitData(input.initData);
+    const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
 
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
