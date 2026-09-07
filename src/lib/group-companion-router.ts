@@ -3,6 +3,17 @@ import { festivalMapStartParam, getFestivalForChat } from "./festival-store";
 import { DEFAULT_FESTIVAL_ID, type FestivalDefinition } from "./festivals";
 import { formatSet, setsStartingWithin } from "./festival-time";
 import {
+  currentScheduleSets,
+  festivalScheduleHasEnded,
+  findFestivalSchedule,
+  formatScheduleEntry,
+  getFestivalSchedule,
+  nextScheduleSets,
+  performerEntries,
+  upcomingScheduleSets,
+  type FestivalScheduleEntry,
+} from "./festival-schedule";
+import {
   getGroupMeetPoint,
   getGroupMeetStatuses,
   listGroupTentPoints,
@@ -52,6 +63,10 @@ function commandFromText(text: string): string {
   return raw.split("@")[0].toLowerCase();
 }
 
+function commandArgs(text: string): string {
+  return text.trim().split(/\s+/).slice(1).join(" ").trim();
+}
+
 function companionInlineKeyboard(chat: TelegramChat, festival: FestivalDefinition) {
   return {
     inline_keyboard: [
@@ -81,26 +96,78 @@ async function showMenu(chat: TelegramChat): Promise<void> {
   });
 }
 
+function compactSchedule(entry: FestivalScheduleEntry, timezone: string): string {
+  return formatScheduleEntry(entry, timezone).replace("\n", " · ");
+}
+
+function customCurrentText(festival: FestivalDefinition, schedule: FestivalScheduleEntry[]): string {
+  const current = currentScheduleSets(schedule, festival.timezone);
+  if (current.length) {
+    return ["🎧 NU", ...current.map((entry) => formatScheduleEntry(entry, festival.timezone))].join("\n\n");
+  }
+  if (festivalScheduleHasEnded(schedule, festival.timezone)) return `🌙 ${festival.name} is afgelopen.`;
+  const next = nextScheduleSets(schedule, festival.timezone);
+  if (!next.length) return "Er draait momenteel niets en ik vind geen volgende set.";
+  return ["🎧 Even stilte · hierna", ...next.map((entry) => compactSchedule(entry, festival.timezone))].join("\n");
+}
+
 async function showTimetable(chat: TelegramChat): Promise<void> {
   const festival = await getFestivalForChat(chat.id);
-  if (festival.id !== DEFAULT_FESTIVAL_ID) {
+  if (festival.id === DEFAULT_FESTIVAL_ID) {
+    const soon = setsStartingWithin(60).slice(0, 8);
+    const extra = soon.length
+      ? ["", "⏱ Binnen 60 min", ...soon.map((set) => formatSet(set))].join("\n")
+      : "\n\n⏱ Binnen 60 minuten start geen nieuwe set.";
+    await sendMessage(chat.id, `${formatCurrent()}${extra}`);
+    return;
+  }
+
+  const schedule = await getFestivalSchedule(festival);
+  if (!performerEntries(schedule).length) {
     await sendMessage(chat.id, `📅 De timetable voor ${festival.name} is nog niet ingesteld in Ginder.`);
     return;
   }
-  const soon = setsStartingWithin(60).slice(0, 8);
+  const soon = upcomingScheduleSets(schedule, festival.timezone, 60).slice(0, 8);
   const extra = soon.length
-    ? ["", "⏱ Binnen 60 min", ...soon.map((set) => formatSet(set))].join("\n")
+    ? ["", "⏱ Binnen 60 min", ...soon.map((entry) => compactSchedule(entry, festival.timezone))].join("\n")
     : "\n\n⏱ Binnen 60 minuten start geen nieuwe set.";
-  await sendMessage(chat.id, `${formatCurrent()}${extra}`);
+  await sendMessage(chat.id, `${customCurrentText(festival, schedule)}${extra}`);
 }
 
 async function showLive(chat: TelegramChat): Promise<void> {
   const festival = await getFestivalForChat(chat.id);
-  if (festival.id !== DEFAULT_FESTIVAL_ID) {
-    await sendMessage(chat.id, `🎵 Live timetable is nog niet ingesteld voor ${festival.name}.`);
+  if (festival.id === DEFAULT_FESTIVAL_ID) {
+    await sendMessage(chat.id, formatCurrent());
     return;
   }
-  await sendMessage(chat.id, formatCurrent());
+  const schedule = await getFestivalSchedule(festival);
+  if (!performerEntries(schedule).length) {
+    await sendMessage(chat.id, `🎵 De timetable voor ${festival.name} is nog niet ingesteld.`);
+    return;
+  }
+  await sendMessage(chat.id, customCurrentText(festival, schedule));
+}
+
+async function showCustomSoon(chat: TelegramChat, festival: FestivalDefinition): Promise<void> {
+  const schedule = await getFestivalSchedule(festival);
+  const soon = upcomingScheduleSets(schedule, festival.timezone, 60).slice(0, 12);
+  await sendMessage(chat.id, soon.length
+    ? ["⏱ Binnen 60 min", ...soon.map((entry) => compactSchedule(entry, festival.timezone))].join("\n")
+    : "⏱ Binnen 60 minuten start geen nieuwe set.");
+}
+
+async function showCustomProgram(chat: TelegramChat, festival: FestivalDefinition, query: string): Promise<void> {
+  if (!query) {
+    await sendMessage(chat.id, "Gebruik: /programma <artiest>");
+    return;
+  }
+  const schedule = await getFestivalSchedule(festival);
+  const matches = findFestivalSchedule(schedule, query).slice(0, 8);
+  if (!matches.length) {
+    await sendMessage(chat.id, `Geen artiest gevonden voor “${query}”.`);
+    return;
+  }
+  await sendMessage(chat.id, matches.map((entry) => formatScheduleEntry(entry, festival.timezone)).join("\n\n"));
 }
 
 function shortAnchorKey(id: string): string {
@@ -346,7 +413,19 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
   if (isGroupChat(message.chat) && ["/wie", "/straks", "/programma", "/ping", "/pings", "/unping"].includes(command)) {
     const festival = await getFestivalForChat(message.chat.id);
     if (festival.id !== DEFAULT_FESTIVAL_ID) {
-      await sendMessage(message.chat.id, `📅 De timetable voor ${festival.name} is nog niet ingesteld in Ginder.`);
+      if (command === "/wie") {
+        await showLive(message.chat);
+        return true;
+      }
+      if (command === "/straks") {
+        await showCustomSoon(message.chat, festival);
+        return true;
+      }
+      if (command === "/programma") {
+        await showCustomProgram(message.chat, festival, commandArgs(raw));
+        return true;
+      }
+      await sendMessage(message.chat.id, `🔔 Artiestpings voor ${festival.name} komen in de volgende Ginder-stap. De timetable zelf werkt al.`);
       return true;
     }
   }
