@@ -4,7 +4,7 @@ import { hasMapAdminConfiguration } from "@/src/lib/map-model";
 import SetupClient from "./SetupClient";
 
 export const metadata: Metadata = {
-  title: "Telegram setup · Space Safari",
+  title: "Telegram setup · Ginder",
   robots: { index: false, follow: false },
 };
 

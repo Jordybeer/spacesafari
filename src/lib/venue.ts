@@ -1,11 +1,12 @@
-// Domaine de Massembre public POI coordinate. The live map is intentionally
-// venue-scoped so arbitrary remote GPS points cannot pollute a public room.
-// Source: Explore Meuse / Cirkwi, Massembre 84, 5543 Heer, updated 2026-08-30.
-export const VENUE_CENTER = { latitude: 50.15654, longitude: 4.85366 } as const;
-export const VENUE_MAX_DISTANCE_METERS = 3_000;
+import { SPACE_SAFARI_2026, type FestivalDefinition } from "./festivals";
 
-// Local offline basemap extent. This covers Massembre plus the useful Hastière
-// surroundings while keeping enough pixel density for walking-scale navigation.
+// Compatibility exports for the existing Space Safari map. New festival-aware code
+// should use the FestivalDefinition passed into isNearFestival instead.
+export const VENUE_CENTER = SPACE_SAFARI_2026.venueCenter;
+export const VENUE_MAX_DISTANCE_METERS = SPACE_SAFARI_2026.venueMaxDistanceMeters;
+
+// Local offline basemap extent for the current Space Safari asset. This remains
+// festival-specific and should move into per-festival map assets when those are added.
 export const OFFLINE_MAP_BOUNDS = {
   west: 4.82,
   south: 50.135,
@@ -27,6 +28,13 @@ export function distanceMeters(
   return 2 * radius * Math.asin(Math.sqrt(h));
 }
 
+export function isNearFestival(
+  festival: Pick<FestivalDefinition, "venueCenter" | "venueMaxDistanceMeters">,
+  location: { latitude: number; longitude: number },
+): boolean {
+  return distanceMeters(location, festival.venueCenter) <= festival.venueMaxDistanceMeters;
+}
+
 export function isNearVenue(location: { latitude: number; longitude: number }): boolean {
-  return distanceMeters(location, VENUE_CENTER) <= VENUE_MAX_DISTANCE_METERS;
+  return isNearFestival(SPACE_SAFARI_2026, location);
 }

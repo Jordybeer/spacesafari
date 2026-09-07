@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import FestivalSetupClient from "./FestivalSetupClient";
 
 export const metadata: Metadata = {
-  title: "Festival voorbereiden · Space Safari",
+  title: "Festival voorbereiden · Ginder",
   description: "Plan een festivalkaart en GPS-ankers vooraf.",
 };
 

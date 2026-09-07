@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Space Safari Assistant",
-    short_name: "Space Safari",
-    description: "Festival timetable and opt-in live map companion",
+    name: "Ginder",
+    short_name: "Ginder",
+    description: "Festivalkaart, timetable en opt-in live groepslocaties",
     start_url: "/map",
     scope: "/",
     display: "standalone",
