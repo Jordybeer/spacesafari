@@ -1,22 +1,22 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ImageSource, Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
+import type { Map as MapLibreMap, Marker as MapLibreMarker, StyleSpecification } from "maplibre-gl";
 import { festivalImageCorners, type GeoAnchor, type LngLatTuple } from "@/src/lib/map-georef";
 import { VENUE_CENTER as VENUE } from "@/src/lib/venue";
 import styles from "./MapClientV2.module.css";
 import mapUi from "./FestivalGeoMap.module.css";
 
 const VENUE_CENTER: [number, number] = [VENUE.longitude, VENUE.latitude];
-const FESTIVAL_SOURCE = "festival-map";
-const FESTIVAL_LAYER = "festival-map-layer";
-const FESTIVAL_IMAGE_URL = "/festival-map.jpg?v=5";
+const FESTIVAL_IMAGE_URL = "/festival-map.jpg?v=6";
+const FESTIVAL_IMAGE_WIDTH = 640;
+const FESTIVAL_IMAGE_HEIGHT = 800;
 const LIVE_LOCATION_MS = 75_000;
 const PRESENCE_TICK_MS = 30_000;
 const LOCAL_STYLE: StyleSpecification = {
   version: 8,
   sources: {},
-  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "rgba(33, 17, 32, 0)" } }],
+  layers: [{ id: "festival-background", type: "background", paint: { "background-color": "#211120" } }],
 };
 
 export interface GeoMember {
@@ -139,6 +139,7 @@ function createMarkerElement(member: GeoMember, isMe: boolean, showNames: boolea
     live ? styles.geoMarkerLive : styles.geoMarkerStale,
     isMe ? styles.geoMarkerMe : "",
   ].filter(Boolean).join(" ");
+  root.style.zIndex = "2";
   root.title = `${name} · ${statusText}`;
   root.setAttribute("aria-label", `${name}, ${statusText}`);
 
@@ -181,10 +182,63 @@ function boundsForCorners(maplibre: typeof import("maplibre-gl"), corners: reado
   return bounds;
 }
 
+function prepareFestivalArtwork(map: MapLibreMap): HTMLImageElement {
+  const image = document.createElement("img");
+  image.src = FESTIVAL_IMAGE_URL;
+  image.alt = "";
+  image.draggable = false;
+  image.setAttribute("aria-hidden", "true");
+  image.style.position = "absolute";
+  image.style.left = "0";
+  image.style.top = "0";
+  image.style.width = `${FESTIVAL_IMAGE_WIDTH}px`;
+  image.style.height = `${FESTIVAL_IMAGE_HEIGHT}px`;
+  image.style.maxWidth = "none";
+  image.style.transformOrigin = "0 0";
+  image.style.pointerEvents = "none";
+  image.style.userSelect = "none";
+  image.style.zIndex = "1";
+
+  const canvas = map.getCanvas();
+  const canvasContainer = map.getCanvasContainer();
+  canvasContainer.insertBefore(image, canvas.nextSibling);
+  return image;
+}
+
+function positionFestivalArtwork(map: MapLibreMap, image: HTMLImageElement, corners: readonly LngLatTuple[] | null): void {
+  if (!corners) {
+    image.style.display = "block";
+    image.style.left = "0";
+    image.style.top = "0";
+    image.style.width = "100%";
+    image.style.height = "100%";
+    image.style.objectFit = "contain";
+    image.style.transform = "none";
+    return;
+  }
+
+  const topLeft = map.project(corners[0]);
+  const topRight = map.project(corners[1]);
+  const bottomLeft = map.project(corners[3]);
+  const a = (topRight.x - topLeft.x) / FESTIVAL_IMAGE_WIDTH;
+  const b = (topRight.y - topLeft.y) / FESTIVAL_IMAGE_WIDTH;
+  const c = (bottomLeft.x - topLeft.x) / FESTIVAL_IMAGE_HEIGHT;
+  const d = (bottomLeft.y - topLeft.y) / FESTIVAL_IMAGE_HEIGHT;
+
+  image.style.display = "block";
+  image.style.left = "0";
+  image.style.top = "0";
+  image.style.width = `${FESTIVAL_IMAGE_WIDTH}px`;
+  image.style.height = `${FESTIVAL_IMAGE_HEIGHT}px`;
+  image.style.objectFit = "fill";
+  image.style.transform = `matrix(${a}, ${b}, ${c}, ${d}, ${topLeft.x}, ${topLeft.y})`;
+}
+
 export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, showNames }: FestivalGeoMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
   const maplibreRef = useRef<typeof import("maplibre-gl") | null>(null);
+  const artworkRef = useRef<HTMLImageElement | null>(null);
   const markersRef = useRef<MapLibreMarker[]>([]);
   const ownFallbackMarkerRef = useRef<MapLibreMarker | null>(null);
   const lastAutoFitKeyRef = useRef("");
@@ -222,13 +276,19 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
       });
       map.addControl(new maplibre.NavigationControl({ showCompass: false }), "bottom-right");
       mapRef.current = map;
-      map.once("load", () => { if (!cancelled) setMapReady(true); });
+      map.once("load", () => {
+        if (cancelled) return;
+        artworkRef.current = prepareFestivalArtwork(map);
+        setMapReady(true);
+      });
     }).catch(() => { if (!cancelled) setMapFailed(true); });
 
     return () => {
       cancelled = true;
       markersRef.current.forEach((marker) => marker.remove());
       ownFallbackMarkerRef.current?.remove();
+      artworkRef.current?.remove();
+      artworkRef.current = null;
       markersRef.current = [];
       ownFallbackMarkerRef.current = null;
       mapRef.current?.remove();
@@ -240,43 +300,30 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
   useEffect(() => {
     const map = mapRef.current;
     const maplibre = maplibreRef.current;
-    if (!map || !maplibre || !mapReady) return;
+    const artwork = artworkRef.current;
+    if (!map || !maplibre || !artwork || !mapReady) return;
 
-    if (!corners) {
-      if (map.getLayer(FESTIVAL_LAYER)) map.removeLayer(FESTIVAL_LAYER);
-      if (map.getSource(FESTIVAL_SOURCE)) map.removeSource(FESTIVAL_SOURCE);
-      lastAutoFitKeyRef.current = "";
-      return;
-    }
+    const updateArtwork = () => positionFestivalArtwork(map, artwork, corners);
+    updateArtwork();
+    map.on("move", updateArtwork);
+    map.on("resize", updateArtwork);
 
-    const existing = map.getSource(FESTIVAL_SOURCE) as ImageSource | undefined;
-    if (existing) {
-      existing.setCoordinates(corners);
-    } else {
-      map.addSource(FESTIVAL_SOURCE, {
-        type: "image",
-        url: FESTIVAL_IMAGE_URL,
-        coordinates: corners,
-      });
-      map.addLayer({
-        id: FESTIVAL_LAYER,
-        type: "raster",
-        source: FESTIVAL_SOURCE,
-        paint: {
-          "raster-opacity": 1,
-          "raster-fade-duration": 0,
-        },
-      });
-    }
-
-    if (cornerKey && cornerKey !== lastAutoFitKeyRef.current) {
+    if (corners && cornerKey && cornerKey !== lastAutoFitKeyRef.current) {
       map.fitBounds(boundsForCorners(maplibre, corners), {
         padding: { top: 24, right: 24, bottom: 42, left: 24 },
         maxZoom: 18,
         duration: 0,
       });
       lastAutoFitKeyRef.current = cornerKey;
+      updateArtwork();
+    } else if (!corners) {
+      lastAutoFitKeyRef.current = "";
     }
+
+    return () => {
+      map.off("move", updateArtwork);
+      map.off("resize", updateArtwork);
+    };
   }, [cornerKey, corners, mapReady]);
 
   useEffect(() => {
@@ -310,6 +357,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
     const root = document.createElement("div");
     root.className = `${styles.geoMarker} ${styles.geoMarkerLive} ${styles.geoMarkerMe} ${styles.geoMarkerGps}`;
+    root.style.zIndex = "2";
     root.title = "Jij · live";
     root.setAttribute("aria-label", "Jij, live");
 
@@ -379,8 +427,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
 
   return (
     <div className={styles.geoMapWrap}>
-      <div className={mapUi.staticFestivalFallback} style={{ zIndex: 0 }} aria-hidden="true" />
-      <div ref={containerRef} className={styles.geoMap} style={{ zIndex: 1 }} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
+      <div ref={containerRef} className={styles.geoMap} aria-label="GPS-uitgelijnde Space Safari festivalkaart" />
 
       {mapReady && (
         <div className={mapUi.quickControls} aria-label="Kaartweergave">
@@ -390,9 +437,7 @@ export default function FestivalGeoMap({ anchors, members, ownUserId, ownFix, sh
         </div>
       )}
 
-      {mapFailed && (
-        <div className={mapUi.fallbackLink}>De live kaart kon niet starten.</div>
-      )}
+      {mapFailed && <div className={mapUi.fallbackLink}>De live kaart kon niet starten.</div>}
 
       <div className={styles.mapLayerBadge}>
         <span className={styles.layerDot} />
