@@ -28,7 +28,7 @@ function sessionSecret(): string {
   return value;
 }
 
-function signPayload(payload: SignedPayload): string {
+function signPayload<T extends SignedPayload>(payload: T): string {
   const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const signature = crypto.createHmac("sha256", sessionSecret()).update(body).digest("base64url");
   return `${body}.${signature}`;
