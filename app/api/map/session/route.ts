@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { DEFAULT_FESTIVAL_ID, requireFestivalDefinition } from "@/src/lib/festivals";
 import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
 import { getGroupMeetPoint, getGroupMeetStatuses, listGroupTentPoints } from "@/src/lib/group-tools";
 import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
@@ -13,11 +14,13 @@ const RequestSchema = z.object({
   initData: z.string().min(1).optional(),
   roomToken: z.string().optional(),
   mode: z.enum(["group", "public"]).default("public"),
+  festivalId: z.string().trim().min(1).max(64).optional().default(DEFAULT_FESTIVAL_ID),
 });
 
 export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
+    const festival = requireFestivalDefinition(input.festivalId);
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = optionalMapAuth(request, input.initData, roomToken);
     if (input.mode === "group" && !data) {
@@ -28,13 +31,13 @@ export async function POST(request: Request) {
     const storageReady = isRedisConfigured();
     const [anchors, rawPresence, meet, tents] = storageReady
       ? await Promise.all([
-          listAnchors(),
-          listPresence(room),
-          input.mode === "group" ? getGroupMeetPoint(room) : Promise.resolve(null),
-          input.mode === "group" ? listGroupTentPoints(room) : Promise.resolve([]),
+          listAnchors(festival.id),
+          listPresence(room, festival.id),
+          input.mode === "group" ? getGroupMeetPoint(room, festival.id) : Promise.resolve(null),
+          input.mode === "group" ? listGroupTentPoints(room, festival.id) : Promise.resolve([]),
         ])
       : [[], [], null, []];
-    const meetStatuses = meet ? await getGroupMeetStatuses(room, meet.id) : [];
+    const meetStatuses = meet ? await getGroupMeetStatuses(room, meet.id, festival.id) : [];
     const statusByUserId = new Map(meetStatuses.map((status) => [status.userId, status.status]));
 
     const ownVisible = input.mode !== "group"
@@ -58,6 +61,18 @@ export async function POST(request: Request) {
 
     const serverTime = new Date().toISOString();
     return NextResponse.json({
+      festival: {
+        id: festival.id,
+        name: festival.name,
+        year: festival.year,
+        timezone: festival.timezone,
+        status: festival.status,
+        mapImageUrl: festival.mapImageUrl,
+        mapImageWidth: festival.mapImageWidth,
+        mapImageHeight: festival.mapImageHeight,
+        venueCenter: festival.venueCenter,
+        venueMaxDistanceMeters: festival.venueMaxDistanceMeters,
+      },
       room,
       mode: input.mode,
       storageReady,
