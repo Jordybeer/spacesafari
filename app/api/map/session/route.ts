@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
-import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
+import { getGroupMeetPoint, listGroupTentPoints } from "@/src/lib/group-tools";
+import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor, type MapPresence } from "@/src/lib/map-model";
 import { projectPresence } from "@/src/lib/map-projection";
 import { isRedisConfigured } from "@/src/lib/storage";
 
@@ -25,11 +26,39 @@ export async function POST(request: Request) {
 
     const room = data ? roomFor(data, input.mode) : "public";
     const storageReady = isRedisConfigured();
-    const [anchors, rawPresence] = storageReady
-      ? await Promise.all([listAnchors(), listPresence(room)])
-      : [[], []];
+    const [anchors, rawPresence, meet, tents] = storageReady
+      ? await Promise.all([
+          listAnchors(),
+          listPresence(room),
+          input.mode === "group" ? getGroupMeetPoint(room) : Promise.resolve(null),
+          input.mode === "group" ? listGroupTentPoints(room) : Promise.resolve([]),
+        ])
+      : [[], [], null, []];
 
-    const projected = projectPresence(rawPresence, anchors).map((member) => ({
+    const markerTime = new Date().toISOString();
+    const groupMarkers: MapPresence[] = [];
+    if (meet) {
+      groupMarkers.push({
+        userId: -1,
+        displayName: `📍 Meet · ${meet.name}`,
+        latitude: meet.latitude,
+        longitude: meet.longitude,
+        horizontalAccuracy: null,
+        updatedAt: markerTime,
+      });
+    }
+    tents.forEach((tent, index) => {
+      groupMarkers.push({
+        userId: -(1000 + index),
+        displayName: `⛺ Tent · ${tent.displayName}`,
+        latitude: tent.latitude,
+        longitude: tent.longitude,
+        horizontalAccuracy: null,
+        updatedAt: markerTime,
+      });
+    });
+
+    const projected = projectPresence([...rawPresence, ...groupMarkers], anchors).map((member) => ({
       userId: member.userId,
       displayName: member.displayName,
       username: member.username,
@@ -69,7 +98,7 @@ export async function POST(request: Request) {
         createdAt: anchor.createdAt,
       })),
       members: projected,
-      serverTime: new Date().toISOString(),
+      serverTime: markerTime,
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Invalid request";
