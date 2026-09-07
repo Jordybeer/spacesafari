@@ -6,6 +6,8 @@ import FestivalGeoMap, {
   type GeoMeetPoint,
   type GeoTentPoint,
 } from "./FestivalGeoMap";
+import { parseFestivalStartParam } from "@/src/lib/festival-links";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import type { GeoAnchor } from "@/src/lib/map-georef";
 import styles from "./MapClientV2.module.css";
 
@@ -31,7 +33,21 @@ type Member = GeoMember & {
 
 type SessionUser = { id: number; firstName: string; username: string | null; photoUrl: string | null };
 
+type SessionFestival = {
+  id: string;
+  name: string;
+  year: number;
+  timezone: string;
+  status: "draft" | "map" | "anchors" | "timetable" | "ready";
+  mapImageUrl: string;
+  mapImageWidth: number;
+  mapImageHeight: number;
+  venueCenter: { latitude: number; longitude: number };
+  venueMaxDistanceMeters: number;
+};
+
 type Session = {
+  festival: SessionFestival;
   room: string;
   mode: RoomMode;
   storageReady: boolean;
@@ -89,7 +105,7 @@ declare global {
   }
 }
 
-const SESSION_CACHE = "space-safari-map-session-v5";
+const SESSION_CACHE = "ginder-map-session-v6";
 const LIVE_INTERVAL_MS = 25_000;
 const POLL_INTERVAL_MS = 15_000;
 const PUBLIC_TTL_SECONDS: ShareDuration = 300;
@@ -155,8 +171,20 @@ function authErrorText(code: string | null): string | null {
   return "Telegram-login mislukte. Probeer opnieuw.";
 }
 
+function launchFestivalSelector(initData: string, query: URLSearchParams): string {
+  if (initData) {
+    const startParam = new URLSearchParams(initData).get("start_param");
+    return parseFestivalStartParam(startParam).selector ?? DEFAULT_FESTIVAL_ID;
+  }
+
+  const explicit = query.get("festival")?.trim();
+  if (explicit) return explicit;
+  return parseFestivalStartParam(query.get("startapp")).selector ?? DEFAULT_FESTIVAL_ID;
+}
+
 export default function MapClientV3() {
   const [initData, setInitData] = useState("");
+  const [festivalId, setFestivalId] = useState(DEFAULT_FESTIVAL_ID);
   const [roomToken, setRoomToken] = useState<string | null>(null);
   const [mode, setMode] = useState<RoomMode>("public");
   const [session, setSession] = useState<Session | null>(null);
@@ -179,11 +207,12 @@ export default function MapClientV3() {
   const calibrationRef = useRef<HTMLDivElement>(null);
 
   const authPayload = useMemo(() => ({
+    festivalId,
     ...(initData ? { initData } : {}),
     ...(roomToken ? { roomToken } : {}),
-  }), [initData, roomToken]);
+  }), [festivalId, initData, roomToken]);
   const effectiveShareDuration: ShareDuration = mode === "public" ? PUBLIC_TTL_SECONDS : shareDuration;
-  const cacheKey = `${SESSION_CACHE}:${mode}:${roomToken ?? "none"}`;
+  const cacheKey = `${SESSION_CACHE}:${festivalId}:${mode}:${roomToken ?? "none"}`;
 
   const refresh = useCallback(async (quiet = false) => {
     if (!authReady) return;
@@ -218,10 +247,18 @@ export default function MapClientV3() {
     const query = new URLSearchParams(window.location.search);
     const rawRoomToken = query.get("room");
     const nextRoomToken = rawRoomToken && ROOM_TOKEN_RE.test(rawRoomToken) ? rawRoomToken : null;
-    setRoomToken(nextRoomToken);
     const nextInitData = webApp?.initData ?? "";
+    const nextFestivalId = launchFestivalSelector(nextInitData, query);
+    setRoomToken(nextRoomToken);
     setInitData(nextInitData);
+    setFestivalId(nextFestivalId);
     setMode(nextInitData ? "group" : "public");
+
+    if (nextInitData && query.has("festival")) {
+      const cleanUrl = new URL(window.location.href);
+      cleanUrl.searchParams.delete("festival");
+      window.history.replaceState(window.history.state, "", `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`);
+    }
 
     const authError = authErrorText(query.get("auth_error"));
     if (authError) setError(authError);
@@ -386,7 +423,7 @@ export default function MapClientV3() {
         action: enabled ? "start" : "stop",
         ...authPayload,
         mode,
-        ...(enabled ? { anchorName: "Nebula" } : {}),
+        ...(enabled && session.anchors[0]?.name ? { anchorName: session.anchors[0].name } : {}),
       });
       await refresh(true);
     } catch (cause) {
@@ -453,15 +490,18 @@ export default function MapClientV3() {
   const selectedDurationLabel = mode === "public"
     ? "5m"
     : GROUP_SHARE_DURATIONS.find((item) => item.seconds === shareDuration)?.label ?? "10 min";
-  const returnTo = roomToken ? `/map?room=${encodeURIComponent(roomToken)}` : "/map";
+  const testAnchorName = session?.anchors[0]?.name ?? "eerste anker";
+  const returnParams = new URLSearchParams({ festival: festivalId });
+  if (roomToken) returnParams.set("room", roomToken);
+  const returnTo = `/map?${returnParams.toString()}`;
   const loginHref = `/api/auth/telegram/start?returnTo=${encodeURIComponent(returnTo)}`;
 
   return (
     <main className={`${styles.shell} ${styles.geoShell}`}>
       <header className={styles.header}>
         <div>
-          <div className={styles.kicker}>MASSEMBRE · 2026</div>
-          <div className={styles.brand}>SPACE <span>SAFARI</span></div>
+          <div className={styles.kicker}>GINDER · {session?.festival.year ?? "festival"}</div>
+          <div className={styles.brand}>{session?.festival.name ?? "GINDER"}</div>
         </div>
         <div className={styles.livePill}>
           <span className={`${styles.liveDot} ${online ? "" : styles.offline}`} />
@@ -497,15 +537,19 @@ export default function MapClientV3() {
           </label>
         </div>
 
-        <FestivalGeoMap
-          anchors={session?.anchors ?? []}
-          members={freshMembers}
-          meet={session?.meet ?? null}
-          tents={session?.tents ?? []}
-          ownUserId={session?.user?.id}
-          ownFix={lastOwnFix}
-          showNames={showNames}
-        />
+        {session ? (
+          <FestivalGeoMap
+            anchors={session.anchors}
+            members={freshMembers}
+            meet={session.meet}
+            tents={session.tents}
+            ownUserId={session.user?.id}
+            ownFix={lastOwnFix}
+            showNames={showNames}
+          />
+        ) : (
+          <div className={styles.infoBanner}>Festival laden…</div>
+        )}
       </section>
 
       {!session?.storageReady && session && <div className={styles.infoBanner}>Live opslag ontbreekt. De kaart zelf blijft bruikbaar.</div>}
@@ -546,7 +590,7 @@ export default function MapClientV3() {
           {loginConfigured ? (
             <a className={styles.primaryButton} href={loginHref}>Log in met Telegram</a>
           ) : (
-            <div className={styles.infoBanner}>Telegram Web Login moet nog één keer in BotFather worden gekoppeld aan spacesafari.jordy.beer.</div>
+            <div className={styles.infoBanner}>Telegram Web Login moet nog één keer in BotFather aan Ginder gekoppeld worden.</div>
           )}
         </section>
       )}
@@ -559,17 +603,17 @@ export default function MapClientV3() {
             {me?.simulated ? (
               <button className={styles.secondaryButton} disabled={testLocationBusy} onClick={() => void setTemporaryTestLocation(false)}>🧪 Verwijder testlocatie</button>
             ) : (
-              <button className={styles.secondaryButton} disabled={testLocationBusy || !session.anchorCount} onClick={() => void setTemporaryTestLocation(true)}>🧪 Test mij bij Nebula</button>
+              <button className={styles.secondaryButton} disabled={testLocationBusy || !session.anchorCount} onClick={() => void setTemporaryTestLocation(true)}>🧪 Test mij bij {testAnchorName}</button>
             )}
             <p>Loop naar een herkenbaar punt, neem je GPS op en tik daarna dezelfde plek op de festivalkaart.</p>
-            <input className={styles.textInput} list="anchor-suggestions-v3" value={anchorName} onChange={(event) => setAnchorName(event.target.value)} placeholder="Naam, bv. Galaxy" />
+            <input className={styles.textInput} list="anchor-suggestions-v3" value={anchorName} onChange={(event) => setAnchorName(event.target.value)} placeholder="Naam, bv. hoofdingang" />
             <datalist id="anchor-suggestions-v3">
-              <option value="Entrance" /><option value="Galaxy" /><option value="Nebula" /><option value="Zodiac" /><option value="Supernova" /><option value="Camping 1" /><option value="Camping 2" /><option value="Parking" />
+              <option value="Hoofdingang" /><option value="Main stage" /><option value="Camping" /><option value="Parking" /><option value="Info" /><option value="Bar" />
             </datalist>
             <button className={styles.secondaryButton} onClick={() => void beginCalibration()}>1 · Neem huidige GPS</button>
             {calibrationFix && <div className={styles.calibrationHint}>GPS vast{calibrationFix.horizontalAccuracy ? ` op ±${Math.round(calibrationFix.horizontalAccuracy)} m` : ""}. Tik nu exact dezelfde plek hieronder.</div>}
             <div ref={calibrationRef} className={`${styles.calibrationImage} ${calibrationFix ? styles.calibrating : ""}`} onClick={handleCalibrationTap}>
-              <img src="/festival-map-original.png?v=4" alt="" draggable={false} />
+              {session.festival.mapImageUrl ? <img src={session.festival.mapImageUrl} alt="" draggable={false} /> : null}
               {session.anchors.map((anchor) => <span key={anchor.id} className={styles.anchorMarker} style={{ left: `${anchor.mapX * 100}%`, top: `${anchor.mapY * 100}%` }} />)}
               {calibrationPoint && <span className={styles.calibrationTarget} style={{ left: `${calibrationPoint.x * 100}%`, top: `${calibrationPoint.y * 100}%` }} />}
             </div>

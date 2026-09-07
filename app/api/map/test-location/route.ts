@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { parseFestivalStartParam } from "@/src/lib/festival-links";
+import { festivalSelectorForContext } from "@/src/lib/festival-links";
 import { requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
-import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { isMapAdmin, listAnchors, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -33,8 +32,9 @@ export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
-    const launchFestival = parseFestivalStartParam(data.startParam).selector;
-    const festival = await requireResolvedFestivalDefinition(input.festivalId ?? launchFestival ?? DEFAULT_FESTIVAL_ID);
+    const festival = await requireResolvedFestivalDefinition(
+      festivalSelectorForContext(data.source, data.startParam, input.festivalId),
+    );
     if (!isMapAdmin(data.user.id)) {
       return NextResponse.json({ error: "Admin only" }, { status: 403 });
     }
@@ -52,7 +52,6 @@ export async function POST(request: Request) {
     if (!anchors.length) return NextResponse.json({ error: "Geen festivalankers beschikbaar." }, { status: 409 });
     const requested = input.anchorName?.toLowerCase();
     const anchor = (requested ? anchors.find((item) => item.name.toLowerCase() === requested) : undefined)
-      ?? anchors.find((item) => item.name.toLowerCase().includes("nebula"))
       ?? anchors[0];
 
     await putPresence(
