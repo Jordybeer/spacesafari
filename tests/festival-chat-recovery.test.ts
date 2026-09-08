@@ -1,17 +1,23 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mocks = vi.hoisted(() => ({
-  festivalForChat: vi.fn(async () => ({ id: "space-safari-2026" })),
-  disabled: vi.fn(async () => false),
-  hvals: vi.fn(async () => [] as unknown[]),
-  get: vi.fn(async () => null as string | null),
-  set: vi.fn(() => ({ del: vi.fn(() => ({ exec: vi.fn(async () => []) })) })),
-}));
-
-const exec = vi.fn(async () => []);
-const del = vi.fn(() => ({ exec }));
-const set = vi.fn(() => ({ del }));
-const multi = vi.fn(() => ({ set, del, exec }));
+const mocks = vi.hoisted(() => {
+  const transaction: {
+    set: ReturnType<typeof vi.fn>;
+    del: ReturnType<typeof vi.fn>;
+    exec: ReturnType<typeof vi.fn>;
+  } = {} as never;
+  transaction.set = vi.fn(() => transaction);
+  transaction.del = vi.fn(() => transaction);
+  transaction.exec = vi.fn(async () => []);
+  return {
+    festivalForChat: vi.fn(async () => ({ id: "space-safari-2026" })),
+    disabled: vi.fn(async () => false),
+    hvals: vi.fn(async () => [] as unknown[]),
+    get: vi.fn(async () => null as string | null),
+    multi: vi.fn(() => transaction),
+    transaction,
+  };
+});
 
 vi.mock("@/src/lib/festival-store", () => ({
   getFestivalForChat: mocks.festivalForChat,
@@ -21,18 +27,21 @@ vi.mock("@/src/lib/storage", () => ({
   getRedis: () => ({
     hvals: mocks.hvals,
     get: mocks.get,
-    multi,
+    multi: mocks.multi,
   }),
 }));
 
 import { recoverFestivalForChat } from "@/src/lib/festival-chat-recovery";
 
 beforeEach(() => {
-  for (const mock of Object.values(mocks)) mock.mockClear();
-  multi.mockClear();
-  set.mockClear();
-  del.mockClear();
-  exec.mockClear();
+  mocks.festivalForChat.mockClear();
+  mocks.disabled.mockClear();
+  mocks.hvals.mockClear();
+  mocks.get.mockClear();
+  mocks.multi.mockClear();
+  mocks.transaction.set.mockClear();
+  mocks.transaction.del.mockClear();
+  mocks.transaction.exec.mockClear();
   mocks.disabled.mockResolvedValue(false);
   mocks.festivalForChat.mockResolvedValue({ id: "space-safari-2026" });
   mocks.hvals.mockResolvedValue([]);
@@ -65,9 +74,9 @@ describe("festival chat recovery", () => {
     const festival = await recoverFestivalForChat(-100123);
 
     expect(festival?.id).toBe("voodoo-2026-abcd");
-    expect(set).toHaveBeenCalledWith("ginder:chat:-100123:festival", "voodoo-2026-abcd");
-    expect(del).toHaveBeenCalledWith("ginder:chat:-100123:disabled");
-    expect(exec).toHaveBeenCalledOnce();
+    expect(mocks.transaction.set).toHaveBeenCalledWith("ginder:chat:-100123:festival", "voodoo-2026-abcd");
+    expect(mocks.transaction.del).toHaveBeenCalledWith("ginder:chat:-100123:disabled");
+    expect(mocks.transaction.exec).toHaveBeenCalledOnce();
   });
 
   it("marks an unrecoverable stale link disabled instead of repeatedly throwing", async () => {
@@ -75,8 +84,8 @@ describe("festival chat recovery", () => {
     mocks.get.mockResolvedValue("missing-festival");
 
     await expect(recoverFestivalForChat(-100999)).resolves.toBeNull();
-    expect(del).toHaveBeenCalledWith("ginder:chat:-100999:festival");
-    expect(set).toHaveBeenCalledWith("ginder:chat:-100999:disabled", "missing-festival");
-    expect(exec).toHaveBeenCalledOnce();
+    expect(mocks.transaction.del).toHaveBeenCalledWith("ginder:chat:-100999:festival");
+    expect(mocks.transaction.set).toHaveBeenCalledWith("ginder:chat:-100999:disabled", "missing-festival");
+    expect(mocks.transaction.exec).toHaveBeenCalledOnce();
   });
 });
