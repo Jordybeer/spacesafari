@@ -11,8 +11,9 @@ export default function manifest(): MetadataRoute.Manifest {
     background_color: "#251225",
     theme_color: "#251225",
     icons: [
-      { src: "/ginder-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any maskable" },
-      { src: "/ginder-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any maskable" },
+      { src: "/ginder-icon-192.png", sizes: "192x192", type: "image/png", purpose: "any" },
+      { src: "/ginder-icon-512.png", sizes: "512x512", type: "image/png", purpose: "any" },
+      { src: "/ginder-icon-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
     ],
   };
 }
