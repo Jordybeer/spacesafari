@@ -63,6 +63,11 @@ export interface TelegramUpdate {
   };
 }
 
+export interface TelegramBotCommand {
+  command: string;
+  description: string;
+}
+
 async function callTelegram<T>(method: string, body: Record<string, unknown>): Promise<T> {
   const token = requireEnv("TELEGRAM_BOT_TOKEN");
   const response = await fetch(`${API}/bot${token}/${method}`, {
@@ -119,6 +124,16 @@ export async function createChatInviteLink(chatId: string | number, name = "Gind
 
 export async function leaveChat(chatId: string | number): Promise<void> {
   await callTelegram<boolean>("leaveChat", { chat_id: chatId });
+}
+
+export async function setBotCommands(
+  commands: TelegramBotCommand[],
+  scope?: Record<string, unknown>,
+): Promise<void> {
+  await callTelegram<boolean>("setMyCommands", {
+    commands,
+    ...(scope ? { scope } : {}),
+  });
 }
 
 export async function setCommandsMenuButton(chatId?: number): Promise<void> {
