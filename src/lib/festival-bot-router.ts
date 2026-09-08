@@ -1,6 +1,8 @@
 import {
+  beginFestivalMapUpload,
   beginFestivalNamePrompt,
   claimCreationSlot,
+  clearFestivalMapUpload,
   clearPendingFestival,
   consumeFestivalNamePrompt,
   createPendingFestival,
@@ -9,9 +11,13 @@ import {
   finalizePendingFestival,
   getCreationCooldownSeconds,
   getCurrentFestivalForOwner,
+  getFestivalAwaitingMapUpload,
+  getFestivalsForOwner,
   getPendingFestival,
   issueFestivalSetupToken,
+  replacePersistedFestivalMap,
   releaseCreationSlot,
+  selectFestivalForOwner,
   setupUrl,
   updatePersistedFestival,
   type PendingFestivalCreation,
@@ -19,6 +25,7 @@ import {
 } from "./festival-store";
 import { privateRoomToken } from "./map-model";
 import {
+  answerCallbackQuery,
   createChatInviteLink,
   mapMiniAppUrl,
   sendMessage,
@@ -26,6 +33,9 @@ import {
   type TelegramMessage,
   type TelegramUpdate,
 } from "./telegram";
+
+const OWNER_SELECT_PREFIX = "fo:";
+const OWNER_MAP_PREFIX = "fomap:";
 
 function commandAndArgs(text: string): { command: string; args: string } {
   const [raw = "", ...rest] = text.trim().split(/\s+/);
@@ -115,22 +125,22 @@ async function askForGroup(chatId: number, pending: PendingFestivalCreation): Pr
   );
 }
 
-async function showCurrentFestival(message: TelegramMessage): Promise<boolean> {
-  const userId = message.from?.id;
-  if (!userId || !isPrivate(message.chat)) return false;
-  const current = await getCurrentFestivalForOwner(userId);
-  if (!current) return false;
-
+async function showOwnerFestival(message: TelegramMessage, current: PersistedFestival): Promise<void> {
+  const userId = message.from!.id;
   const { festival, setupToken } = await issueFestivalSetupToken(current.id);
   const configUrl = setupUrl(festival, setupToken);
   const roomToken = festival.chatId === null ? undefined : privateRoomToken(festival.chatId);
   const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
   const cooldown = await getCreationCooldownSeconds(userId);
-  const rows: Array<Array<{ text: string; url: string }>> = [
+  const rows: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [
     [{ text: festival.status === "ready" ? "⚙️ Festival beheren" : "⚙️ Setup verderzetten", url: configUrl }],
   ];
   if (festival.mapImageUrl) rows.push([{ text: "🗺 Open kaart", url: mapUrl }]);
   if (festival.inviteLink) rows.push([{ text: "👥 Open festivalgroep", url: festival.inviteLink }]);
+  if (festival.mapImageUrl) rows.push([{
+    text: "🖼 Kaart vervangen",
+    callback_data: `${OWNER_MAP_PREFIX}${festival.publicKey}`,
+  }]);
 
   const newFestivalLine = cooldown > 0
     ? `Je kunt over ${cooldownText(cooldown)} weer een nieuw festival aanmaken.`
@@ -141,11 +151,54 @@ async function showCurrentFestival(message: TelegramMessage): Promise<boolean> {
     statusText(festival),
     festival.chatTitle ? `Groep: ${festival.chatTitle}` : null,
     "",
+    "Wisselen tussen je festivals: /festival lijst",
     newFestivalLine,
   ].filter((line): line is string => Boolean(line)).join("\n"), {
     reply_markup: { inline_keyboard: rows },
   });
+}
+
+async function showCurrentFestival(message: TelegramMessage): Promise<boolean> {
+  const userId = message.from?.id;
+  if (!userId || !isPrivate(message.chat)) return false;
+  const current = await getCurrentFestivalForOwner(userId);
+  if (!current) return false;
+  await showOwnerFestival(message, current);
   return true;
+}
+
+async function showOwnedFestivals(message: TelegramMessage): Promise<void> {
+  const userId = message.from?.id;
+  if (!userId || !isPrivate(message.chat)) return;
+  const festivals = await getFestivalsForOwner(userId);
+  if (!festivals.length) {
+    await sendMessage(message.chat.id, "Je hebt nog geen festival in Ginder. Gebruik /festival om er eentje te maken.");
+    return;
+  }
+  if (festivals.length === 1) {
+    await showOwnerFestival(message, festivals[0]);
+    return;
+  }
+  await sendMessage(message.chat.id, "Welk festival wil je beheren?", {
+    reply_markup: {
+      inline_keyboard: festivals.map((festival) => [{
+        text: `${festival.name} ${festival.year} · ${statusText(festival)}`,
+        callback_data: `${OWNER_SELECT_PREFIX}${festival.publicKey}`,
+      }]),
+    },
+  });
+}
+
+async function requestFestivalMap(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
+  await beginFestivalMapUpload(message.from!.id, festival.id);
+  await sendMessage(message.chat.id, [
+    `Stuur nu de ${festival.mapImageUrl ? "nieuwe " : ""}festivalkaart voor ${festival.name} als foto of afbeeldingsbestand.`,
+    festival.mapImageUrl
+      ? "Zodra ik ze ontvang, verwijder ik de oude ankers. Daarna stel je die opnieuw in op de nieuwe kaart."
+      : "Liefst het originele bestand of de hoogste resolutie die je hebt.",
+    "",
+    "Toch niet? /festival cancel",
+  ].join("\n"));
 }
 
 async function startFestivalCreation(message: TelegramMessage, rawName: string): Promise<void> {
@@ -298,23 +351,29 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
   const fileId = imageDocument?.file_id ?? largestPhoto?.file_id;
   if (!fileId) return false;
 
-  const festival = await getCurrentFestivalForOwner(message.from.id);
-  if (!festival || festival.status !== "map") return false;
+  const current = await getCurrentFestivalForOwner(message.from.id);
+  const awaitingReplacement = await getFestivalAwaitingMapUpload(message.from.id);
+  const festival = awaitingReplacement ?? (current?.status === "map" ? current : null);
+  if (!festival) return false;
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
   if (!appUrl) throw new Error("APP_URL is not configured");
 
-  const updated = await updatePersistedFestival(festival.id, {
+  const map = {
     telegramMapFileId: fileId,
     mapImageUrl: `${appUrl}/api/festivals/${encodeURIComponent(festival.id)}/map-image`,
     mapImageWidth: largestPhoto?.width ?? festival.mapImageWidth,
     mapImageHeight: largestPhoto?.height ?? festival.mapImageHeight,
-    status: "anchors",
-  });
+  };
+  const replaced = Boolean(festival.mapImageUrl);
+  const updated = replaced
+    ? await replacePersistedFestivalMap(festival.id, map)
+    : await updatePersistedFestival(festival.id, { ...map, status: "anchors" });
+  await clearFestivalMapUpload(message.from.id);
   const { festival: resumable, setupToken } = await issueFestivalSetupToken(updated.id);
   const configUrl = setupUrl(resumable, setupToken);
   await sendMessage(message.chat.id, [
-    `✅ Kaart ontvangen voor ${resumable.name}.`,
-    "Nu terrein + ankers afwerken.",
+    `✅ ${replaced ? "Nieuwe kaart" : "Kaart"} ontvangen voor ${resumable.name}.`,
+    replaced ? "De oude ankers zijn verwijderd. Stel ze opnieuw in op deze kaart." : "Nu terrein + ankers afwerken.",
   ].join("\n"), {
     reply_markup: { inline_keyboard: [[{ text: "⚙️ Festival instellen", url: configUrl }]] },
   });
@@ -322,6 +381,27 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
 }
 
 export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Promise<boolean> {
+  const callback = update.callback_query;
+  if (callback?.data?.startsWith(OWNER_SELECT_PREFIX) || callback?.data?.startsWith(OWNER_MAP_PREFIX)) {
+    const message = callback.message;
+    if (!message || !isPrivate(message.chat)) {
+      await answerCallbackQuery(callback.id, "Festivalbeheer werkt alleen in privé.");
+      return true;
+    }
+    const replacingMap = callback.data.startsWith(OWNER_MAP_PREFIX);
+    const selector = callback.data.slice((replacingMap ? OWNER_MAP_PREFIX : OWNER_SELECT_PREFIX).length);
+    try {
+      const festival = await selectFestivalForOwner(callback.from.id, selector);
+      await answerCallbackQuery(callback.id, replacingMap ? "Stuur de nieuwe kaart hieronder." : "Festival geselecteerd.");
+      const ownerMessage = { ...message, from: callback.from };
+      if (replacingMap) await requestFestivalMap(ownerMessage, festival);
+      else await showOwnerFestival(ownerMessage, festival);
+    } catch (error) {
+      await answerCallbackQuery(callback.id, error instanceof Error ? error.message : "Festival niet gevonden.");
+    }
+    return true;
+  }
+
   const message = update.message;
   if (!message) return false;
 
@@ -336,14 +416,32 @@ export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Prom
   const { command, args } = commandAndArgs(message.text);
   if (command === "/festival") {
     const normalizedArgs = args.toLowerCase();
+    if (!isPrivate(message.chat)) {
+      await startFestivalCreation(message, args);
+      return true;
+    }
+
     if (normalizedArgs === "cancel") {
-      await clearPendingFestival(message.from.id);
+      await Promise.all([
+        clearPendingFestival(message.from.id),
+        clearFestivalMapUpload(message.from.id),
+      ]);
       await sendMessage(message.chat.id, "Festivalsetup geannuleerd.", { reply_markup: { remove_keyboard: true } });
       return true;
     }
 
-    if (!isPrivate(message.chat)) {
-      await startFestivalCreation(message, args);
+    if (["lijst", "list", "festivals"].includes(normalizedArgs)) {
+      await showOwnedFestivals(message);
+      return true;
+    }
+
+    if (["kaart", "map"].includes(normalizedArgs)) {
+      const festival = await getCurrentFestivalForOwner(message.from.id);
+      if (!festival) {
+        await sendMessage(message.chat.id, "Je hebt nog geen festival om een kaart voor in te stellen.");
+        return true;
+      }
+      await requestFestivalMap(message, festival);
       return true;
     }
 

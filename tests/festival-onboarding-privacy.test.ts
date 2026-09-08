@@ -16,7 +16,7 @@ vi.mock("@/src/lib/telegram", () => ({
   sendMessage: telegram.sendMessage,
 }));
 
-import { onboardingMessages } from "@/src/lib/festival-bot-router";
+import { onboardingMessages, routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
 import type { PersistedFestival } from "@/src/lib/festival-store";
 
 function festival(): PersistedFestival {
@@ -61,5 +61,20 @@ describe("festival onboarding privacy", () => {
     expect(groupPayload).not.toContain("festival-setup");
     expect(groupPayload).not.toContain("Festival instellen");
     expect(groupPayload).toContain("Open kaart");
+  });
+
+  it("keeps every /festival subcommand out of Telegram groups", async () => {
+    await routeFestivalLifecycleUpdate({
+      update_id: 1,
+      message: {
+        message_id: 2,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: -100123, type: "group", title: "Festivalcrew" },
+        text: "/festival cancel",
+      },
+    });
+
+    expect(telegram.sendMessage).toHaveBeenCalledOnce();
+    expect(telegram.sendMessage.mock.calls[0][1]).toContain("in privé met Ginder");
   });
 });
