@@ -121,6 +121,13 @@ export async function leaveChat(chatId: string | number): Promise<void> {
   await callTelegram<boolean>("leaveChat", { chat_id: chatId });
 }
 
+export async function setCommandsMenuButton(chatId?: number): Promise<void> {
+  await callTelegram<boolean>("setChatMenuButton", {
+    ...(chatId !== undefined ? { chat_id: chatId } : {}),
+    menu_button: { type: "commands" },
+  });
+}
+
 export async function getTelegramFilePath(fileId: string): Promise<string> {
   const file = await callTelegram<{ file_path?: string }>("getFile", { file_id: fileId });
   if (!file.file_path) throw new Error("Telegram gaf geen bestandspad terug.");
