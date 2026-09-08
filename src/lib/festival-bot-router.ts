@@ -19,12 +19,10 @@ import {
   getFestivalAwaitingMapUpload,
   getFestivalsForOwner,
   getPendingFestival,
-  issueFestivalSetupToken,
   replacePersistedFestivalMap,
   releaseCreationSlot,
   restoreFestivalForOwner,
   selectFestivalForOwner,
-  setupUrl,
   unlinkFestivalGroup,
   updatePersistedFestival,
   type PendingFestivalCreation,
@@ -51,6 +49,7 @@ const OWNER_UNLINK_CONFIRM_PREFIX = "founlinkyes:";
 const OWNER_ARCHIVE_PREFIX = "foarchive:";
 const OWNER_ARCHIVE_CONFIRM_PREFIX = "foarchiveyes:";
 const OWNER_RESTORE_PREFIX = "forestore:";
+const BOT_SETUP_PREFIX = "fs:";
 
 function commandAndArgs(text: string): { command: string; args: string } {
   const [raw = "", ...rest] = text.trim().split(/\s+/);
@@ -59,6 +58,10 @@ function commandAndArgs(text: string): { command: string; args: string } {
 
 function isPrivate(chat: TelegramChat): boolean {
   return chat.type === "private";
+}
+
+function botSetupCallback(festival: PersistedFestival): string {
+  return `${BOT_SETUP_PREFIX}${festival.publicKey}`;
 }
 
 async function safeAnswerOwnerCallback(callbackId: string, text: string): Promise<void> {
@@ -152,15 +155,16 @@ async function askForGroup(chatId: number, pending: PendingFestivalCreation): Pr
   );
 }
 
-async function showOwnerFestival(message: TelegramMessage, current: PersistedFestival): Promise<void> {
+async function showOwnerFestival(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
   const userId = message.from!.id;
-  const { festival, setupToken } = await issueFestivalSetupToken(current.id);
-  const configUrl = setupUrl(festival, setupToken);
   const roomToken = festival.chatId === null ? undefined : privateRoomToken(festival.chatId);
   const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
   const cooldown = await getCreationCooldownSeconds(userId);
   const rows: Array<Array<{ text: string; url?: string; callback_data?: string }>> = [
-    [{ text: festival.status === "ready" ? "⚙️ Festival beheren" : "⚙️ Setup verderzetten", url: configUrl }],
+    [{
+      text: festival.status === "ready" ? "⚙️ Festival beheren" : "▶️ Setup verder",
+      callback_data: botSetupCallback(festival),
+    }],
   ];
   if (festival.mapImageUrl) rows.push([{ text: "🗺 Open kaart", url: mapUrl }]);
   if (festival.inviteLink) rows.push([{ text: "👥 Open festivalgroep", url: festival.inviteLink }]);
@@ -256,9 +260,13 @@ async function requestFestivalMap(message: TelegramMessage, festival: PersistedF
   ]);
   await beginFestivalMapUpload(message.from!.id, festival.id);
   await sendMessage(message.chat.id, [
-    `Stuur nu de ${festival.mapImageUrl ? "nieuwe " : ""}festivalkaart voor ${festival.name} als foto of afbeeldingsbestand.`,
+    "1/4 · Festivalkaart",
+    "",
+    `Stuur de ${festival.mapImageUrl ? "nieuwe " : "officiële "}festivalkaart voor ${festival.name} hier in deze privéchat.`,
+    "Tik op + (of de paperclip) → Foto of Bestand → kies de kaart → verstuur.",
+    "Je hoeft geen link te plakken en er opent geen aparte uploadpagina.",
     festival.mapImageUrl
-      ? "Zodra ik ze ontvang, verwijder ik de oude ankers. Daarna stel je die opnieuw in op de nieuwe kaart."
+      ? "De oude ankers worden pas verwijderd zodra de nieuwe afbeelding echt ontvangen is."
       : "Liefst het originele bestand of de hoogste resolutie die je hebt.",
     "",
     "Toch niet? /festival cancel",
@@ -364,23 +372,38 @@ export async function onboardingMessages(festival: PersistedFestival): Promise<v
       "/menu voor alle festivaltools · /map voor de kaart.",
     ]
     : [
-      "🗺 De maker zet eerst de kaart klaar:",
-      "1. Festivalkaart privé naar Ginder sturen. Liefst het originele bestand / de hoogste resolutie.",
-      "2. Terreincentrum en liefst 4–6 vaste, goed verspreide ankers instellen. Twee werkt technisch, meer is stabieler.",
-      "3. Daarna komt de timetable aan de beurt.",
+      "🛠 Setup is bezig.",
+      "De maker krijgt de stappen privé in Ginder. Zodra de setup klaar is, kunnen jullie hier /map en /menu gebruiken.",
     ];
-  await sendMessage(festival.chatId, setupText.join("\n"), {
-    reply_markup: {
-      inline_keyboard: [
-        [{ text: "🗺 Open kaart", url: mapUrl }],
-      ],
-    },
-  });
+  await sendMessage(
+    festival.chatId,
+    setupText.join("\n"),
+    festival.mapImageUrl
+      ? { reply_markup: { inline_keyboard: [[{ text: "🗺 Open kaart", url: mapUrl }]] } }
+      : undefined,
+  );
 
   const inviteText = festival.inviteLink
     ? `Nodig de rest maar uit: ${festival.inviteLink}`
     : "Nodig de rest maar uit via de groepsinfo. De invite-link kon ik niet zelf aanmaken, maar de groep is wel gekoppeld.";
   await sendMessage(festival.chatId, `👥 ${inviteText}\n\nVanaf hier mogen jullie elkaar weer gewoon kwijtraken.`);
+}
+
+async function continueIncompleteFestivalSetup(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
+  if (!festival.mapImageUrl) {
+    await requestFestivalMap(message, festival);
+    return;
+  }
+  if (festival.status === "ready") return;
+  await sendMessage(message.chat.id, "De festivalsetup is nog niet klaar. Ga verder waar je gebleven was.", {
+    reply_markup: {
+      inline_keyboard: [[{
+        text: "▶️ Setup verder",
+        callback_data: botSetupCallback(festival),
+        style: "primary",
+      }]],
+    },
+  });
 }
 
 async function finishGroupLink(message: TelegramMessage): Promise<void> {
@@ -406,13 +429,15 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
       await sendMessage(message.chat.id, `✅ ${linkedFestival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
         reply_markup: { remove_keyboard: true },
       });
+      await continueIncompleteFestivalSetup(message, linkedFestival);
     } catch (error) {
       if (linkedFestival) {
         console.error("Existing festival group onboarding failed", error);
         await sendMessage(message.chat.id, [
           `⚠️ ${linkedFestival.name} is wel gekoppeld, maar de onboarding in de groep liep vast.`,
-          "Gebruik /festival om de koppeling te bekijken of opnieuw te beheren.",
+          "Je festivaldata is veilig. De setup kan hier in privé gewoon verder.",
         ].join("\n"), { reply_markup: { remove_keyboard: true } });
+        await continueIncompleteFestivalSetup(message, linkedFestival);
         return;
       }
       if (error instanceof FestivalChatAlreadyLinkedError) {
@@ -449,12 +474,10 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
     }
 
     await onboardingMessages(festival);
-    const configUrl = setupUrl(festival, created.setupToken);
     await sendMessage(message.chat.id, `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
-      reply_markup: {
-        inline_keyboard: [[{ text: "⚙️ Festival instellen", url: configUrl }]],
-      },
+      reply_markup: { remove_keyboard: true },
     });
+    await requestFestivalMap(message, festival);
   } catch (error) {
     if (!created && error instanceof FestivalChatAlreadyLinkedError) {
       await releaseCreationSlot(userId);
@@ -475,15 +498,19 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
       return;
     }
 
-    const recoveryUrl = setupUrl(created.festival, created.setupToken);
     await sendMessage(message.chat.id, [
       `⚠️ ${created.festival.name} is wel aangemaakt, maar de onboarding in de groep liep vast.`,
       "Je 7-dagenlimiet blijft daarom correct actief.",
-      "Je kunt de festivalsetup hier verderzetten:",
-      recoveryUrl,
+      "De festivalsetup kan hier in privé gewoon verder.",
     ].join("\n"), {
       reply_markup: { remove_keyboard: true },
     });
+    try {
+      await continueIncompleteFestivalSetup(message, created.festival);
+    } catch (setupError) {
+      console.error("Festival setup recovery failed", setupError);
+      await sendMessage(message.chat.id, "Gebruik /festival setup om de setup opnieuw te openen.");
+    }
   }
 }
 
@@ -515,13 +542,17 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
     ? await replacePersistedFestivalMap(festival.id, map)
     : await updatePersistedFestival(festival.id, { ...map, status: "anchors" });
   await clearFestivalMapUpload(message.from.id);
-  const { festival: resumable, setupToken } = await issueFestivalSetupToken(updated.id);
-  const configUrl = setupUrl(resumable, setupToken);
   await sendMessage(message.chat.id, [
-    `✅ ${replaced ? "Nieuwe kaart" : "Kaart"} ontvangen voor ${resumable.name}.`,
-    replaced ? "De oude ankers zijn verwijderd. Stel ze opnieuw in op deze kaart." : "Nu terrein + ankers afwerken.",
+    `✅ ${replaced ? "Nieuwe kaart" : "Kaart"} ontvangen voor ${updated.name}.`,
+    replaced ? "De oude ankers zijn verwijderd. Stel ze opnieuw in op deze kaart." : "Kaart staat. Ga nu verder met het terrein.",
   ].join("\n"), {
-    reply_markup: { inline_keyboard: [[{ text: "⚙️ Festival instellen", url: configUrl }]] },
+    reply_markup: {
+      inline_keyboard: [[{
+        text: "▶️ Setup verder",
+        callback_data: botSetupCallback(updated),
+        style: "primary",
+      }]],
+    },
   });
   return true;
 }
