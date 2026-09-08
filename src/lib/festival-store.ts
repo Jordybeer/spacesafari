@@ -95,6 +95,10 @@ function groupLinkKey(userId: number): string {
   return `ginder:user:${userId}:group-link`;
 }
 
+function festivalGroupLinkLockKey(festivalId: string): string {
+  return `${festivalStoragePrefix(festivalId)}:group-link-lock`;
+}
+
 function tokenHash(token: string): string {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -169,6 +173,10 @@ export async function consumeFestivalNamePrompt(ownerTelegramId: number): Promis
   if (!exists) return false;
   await redis.del(namePromptKey(ownerTelegramId));
   return true;
+}
+
+export async function clearFestivalNamePrompt(ownerTelegramId: number): Promise<void> {
+  await getRedis().del(namePromptKey(ownerTelegramId));
 }
 
 export async function createPendingFestival(
@@ -379,30 +387,42 @@ export async function finishFestivalGroupLink(
   if (!pending || pending.requestId !== requestId || pending.ownerTelegramId !== ownerTelegramId) {
     throw new Error("Die groepskeuze hoort niet meer bij een actieve koppeling.");
   }
-  const festival = await getPersistedFestival(pending.festivalId);
-  if (!festival || festival.ownerTelegramId !== ownerTelegramId || festival.archivedAt) {
-    throw new Error("Festival niet gevonden voor deze eigenaar.");
-  }
-  const claimedChat = await redis.set(chatFestivalKey(chat.id), festival.id, { nx: true });
-  if (claimedChat === null) throw new FestivalChatAlreadyLinkedError();
-  const next: PersistedFestival = {
-    ...festival,
-    chatId: chat.id,
-    chatTitle: chat.title ?? null,
-    inviteLink: null,
-    updatedAt: new Date().toISOString(),
-  };
+  const lockKey = festivalGroupLinkLockKey(pending.festivalId);
+  const lock = await redis.set(lockKey, randomToken(12), { nx: true, ex: 30 });
+  if (lock === null) throw new Error("Deze groepskoppeling wordt al verwerkt. Probeer zo opnieuw.");
+  let claimedChat = false;
   try {
+    const festival = await getPersistedFestival(pending.festivalId);
+    if (!festival || festival.ownerTelegramId !== ownerTelegramId || festival.archivedAt) {
+      throw new Error("Festival niet gevonden voor deze eigenaar.");
+    }
+    if (festival.chatId !== null) throw new Error("Dit festival is intussen al aan een groep gekoppeld.");
+    const claimed = await redis.set(chatFestivalKey(chat.id), festival.id, { nx: true });
+    if (claimed === null) throw new FestivalChatAlreadyLinkedError();
+    claimedChat = true;
+    const next: PersistedFestival = {
+      ...festival,
+      chatId: chat.id,
+      chatTitle: chat.title ?? null,
+      inviteLink: null,
+      updatedAt: new Date().toISOString(),
+    };
     await redis.multi()
       .hset(FESTIVALS_KEY, { [next.id]: next })
       .del(disabledChatKey(chat.id))
       .del(groupLinkKey(ownerTelegramId))
       .exec();
+    return next;
   } catch (error) {
-    await redis.del(chatFestivalKey(chat.id));
+    if (claimedChat) await redis.del(chatFestivalKey(chat.id));
     throw error;
+  } finally {
+    try {
+      await redis.del(lockKey);
+    } catch (error) {
+      console.warn("Ginder could not release festival group-link lock", error);
+    }
   }
-  return next;
 }
 
 export async function clearFestivalGroupLink(ownerTelegramId: number): Promise<void> {
@@ -521,7 +541,7 @@ export async function issueFestivalSetupToken(
 export async function verifyFestivalSetupToken(festivalId: string, token: string): Promise<PersistedFestival> {
   const festival = await getPersistedFestival(festivalId);
   const hash = token ? tokenHash(token) : "";
-  const valid = Boolean(festival && hash && (
+  const valid = Boolean(festival && !festival.archivedAt && hash && (
     festival.setupTokenHash === hash || festival.setupTokenHashes?.includes(hash)
   ));
   if (!festival || !valid) {
