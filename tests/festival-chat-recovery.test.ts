@@ -11,6 +11,11 @@ const mocks = vi.hoisted(() => {
   transaction.exec = vi.fn(async () => []);
   return {
     festivalForChat: vi.fn(async () => ({ id: "space-safari-2026" })),
+    persistedFestival: vi.fn(async () => null as null | {
+      id: string;
+      chatId: number | null;
+      archivedAt?: string | null;
+    }),
     disabled: vi.fn(async () => false),
     hvals: vi.fn(async () => [] as unknown[]),
     get: vi.fn(async () => null as string | null),
@@ -21,6 +26,7 @@ const mocks = vi.hoisted(() => {
 
 vi.mock("@/src/lib/festival-store", () => ({
   getFestivalForChat: mocks.festivalForChat,
+  getPersistedFestival: mocks.persistedFestival,
   isFestivalChatDisabled: mocks.disabled,
 }));
 vi.mock("@/src/lib/storage", () => ({
@@ -35,6 +41,7 @@ import { recoverFestivalForChat } from "@/src/lib/festival-chat-recovery";
 
 beforeEach(() => {
   mocks.festivalForChat.mockClear();
+  mocks.persistedFestival.mockClear();
   mocks.disabled.mockClear();
   mocks.hvals.mockClear();
   mocks.get.mockClear();
@@ -44,6 +51,7 @@ beforeEach(() => {
   mocks.transaction.exec.mockClear();
   mocks.disabled.mockResolvedValue(false);
   mocks.festivalForChat.mockResolvedValue({ id: "space-safari-2026" });
+  mocks.persistedFestival.mockResolvedValue(null);
   mocks.hvals.mockResolvedValue([]);
   mocks.get.mockResolvedValue(null);
 });
@@ -77,6 +85,39 @@ describe("festival chat recovery", () => {
     expect(mocks.transaction.set).toHaveBeenCalledWith("ginder:chat:-100123:festival", "voodoo-2026-abcd");
     expect(mocks.transaction.del).toHaveBeenCalledWith("ginder:chat:-100123:disabled");
     expect(mocks.transaction.exec).toHaveBeenCalledOnce();
+  });
+
+  it("revives a disabled link only when the persisted festival still owns that exact chat", async () => {
+    mocks.disabled.mockResolvedValue(true);
+    mocks.get.mockResolvedValue("voodoo-village-2026-EiEu");
+    mocks.persistedFestival.mockResolvedValue({
+      id: "voodoo-village-2026-EiEu",
+      chatId: -1004474370255,
+      archivedAt: null,
+    });
+
+    const festival = await recoverFestivalForChat(-1004474370255);
+
+    expect(mocks.persistedFestival).toHaveBeenCalledWith("voodoo-village-2026-EiEu");
+    expect(festival?.id).toBe("voodoo-village-2026-EiEu");
+    expect(mocks.transaction.set).toHaveBeenCalledWith(
+      "ginder:chat:-1004474370255:festival",
+      "voodoo-village-2026-EiEu",
+    );
+    expect(mocks.transaction.del).toHaveBeenCalledWith("ginder:chat:-1004474370255:disabled");
+  });
+
+  it("does not revive an intentionally unlinked or archived festival", async () => {
+    mocks.disabled.mockResolvedValue(true);
+    mocks.get.mockResolvedValue("voodoo-village-2026-EiEu");
+    mocks.persistedFestival.mockResolvedValue({
+      id: "voodoo-village-2026-EiEu",
+      chatId: null,
+      archivedAt: null,
+    });
+
+    await expect(recoverFestivalForChat(-1004474370255)).resolves.toBeNull();
+    expect(mocks.transaction.set).not.toHaveBeenCalled();
   });
 
   it("marks an unrecoverable stale link disabled instead of repeatedly throwing", async () => {
