@@ -4,6 +4,7 @@ import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
 import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
+import { syncTelegramCommandUi } from "@/src/lib/telegram-command-ui";
 import { setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
@@ -18,13 +19,13 @@ function isGroupChat(chat: TelegramChat | undefined): boolean {
   return chat?.type === "group" || chat?.type === "supergroup";
 }
 
-async function normalizePrivateChatUi(update: TelegramUpdate): Promise<void> {
+async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
   const chat = updateChat(update);
-  if (chat?.type !== "private") return;
   try {
-    await setCommandsMenuButton(chat.id);
+    await syncTelegramCommandUi();
+    if (chat?.type === "private") await setCommandsMenuButton(chat.id);
   } catch (error) {
-    console.warn("Ginder could not normalize the private Telegram menu button", error);
+    console.warn("Ginder could not normalize the Telegram command UI", error);
   }
 }
 
@@ -67,7 +68,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    await normalizePrivateChatUi(update);
+    await normalizeTelegramUi(update);
 
     const setupHandled = await routeFestivalBotSetupUpdate(update);
     if (!setupHandled) {
