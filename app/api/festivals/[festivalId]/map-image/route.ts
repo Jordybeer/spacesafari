@@ -11,7 +11,7 @@ export async function GET(
 ) {
   const { festivalId } = await context.params;
   const festival = await getPersistedFestival(festivalId);
-  if (!festival?.telegramMapFileId) {
+  if (!festival?.telegramMapFileId || festival.archivedAt) {
     return NextResponse.json({ error: "Geen festivalkaart gevonden." }, { status: 404 });
   }
 
