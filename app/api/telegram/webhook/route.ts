@@ -2,13 +2,46 @@ import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
 import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
+import { recoverFestivalForChat } from "@/src/lib/festival-chat-recovery";
 import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
-import type { TelegramUpdate } from "@/src/lib/telegram";
+import { syncTelegramCommandUi } from "@/src/lib/telegram-command-ui";
+import { sendMessage, setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function updateChat(update: TelegramUpdate): TelegramChat | undefined {
+  return update.message?.chat ?? update.callback_query?.message?.chat;
+}
+
+function isGroupChat(chat: TelegramChat | undefined): boolean {
+  return chat?.type === "group" || chat?.type === "supergroup";
+}
+
+function commandFromUpdate(update: TelegramUpdate): string {
+  const text = update.message?.text?.trim() ?? "";
+  const [raw = ""] = text.split(/\s+/);
+  return raw.split("@")[0].toLowerCase();
+}
+
+async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
+  const chat = updateChat(update);
+  try {
+    await syncTelegramCommandUi();
+  } catch (error) {
+    console.warn("Ginder could not sync Telegram command scopes", error);
+  }
+
+  if (chat?.type !== "private") return;
+  try {
+    await setCommandsMenuButton(chat.id);
+  } catch (error) {
+    console.warn("Ginder could not restore the private Telegram menu button", error);
+  }
+}
 
 async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void> {
   const message = update.message;
@@ -27,6 +60,27 @@ async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void>
       chat_shared: undefined,
     },
   });
+}
+
+async function routeGroupUpdate(update: TelegramUpdate, chat: TelegramChat): Promise<void> {
+  if (commandFromUpdate(update) === "/id") {
+    await routeTelegramUpdate(update);
+    return;
+  }
+
+  const festival = await recoverFestivalForChat(chat.id);
+  if (!festival) {
+    await sendMessage(chat.id, [
+      "Deze groep heeft geen geldige Ginder-koppeling meer.",
+      "De festivalmaker kan in privé /festival openen en de groep opnieuw koppelen.",
+    ].join("\n"));
+    return;
+  }
+
+  if (await routeGroupCompanionUpdate(update)) return;
+  if (festival.id === DEFAULT_FESTIVAL_ID) {
+    await routeTelegramUpdate(update);
+  }
 }
 
 export async function POST(request: Request) {
@@ -49,13 +103,20 @@ export async function POST(request: Request) {
   }
 
   try {
+    await normalizeTelegramUi(update);
+
     const setupHandled = await routeFestivalBotSetupUpdate(update);
     if (!setupHandled) {
       const lifecycleHandled = await routeFestivalLifecycleUpdate(update);
       if (lifecycleHandled) {
         await continueFreshFestivalSetup(update);
-      } else if (!(await routeGroupCompanionUpdate(update))) {
-        await routeTelegramUpdate(update);
+      } else {
+        const chat = updateChat(update);
+        if (isGroupChat(chat) && chat) {
+          await routeGroupUpdate(update, chat);
+        } else if (chat?.type !== "private") {
+          await routeTelegramUpdate(update);
+        }
       }
     }
     return NextResponse.json({ ok: true });

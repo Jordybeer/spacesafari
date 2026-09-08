@@ -67,6 +67,19 @@ function cooldownKey(userId: number): string {
   return `ginder:festival:create-cooldown:${userId}`;
 }
 
+export function isFestivalCreationRateLimitExempt(ownerTelegramId: number): boolean {
+  const configuredIds = [
+    process.env.FESTIVAL_CREATION_RATE_LIMIT_BYPASS_TELEGRAM_IDS,
+    process.env.MAP_ADMIN_TELEGRAM_IDS,
+  ]
+    .filter((value): value is string => Boolean(value))
+    .join(",")
+    .split(",")
+    .map((value) => Number(value.trim()))
+    .filter(Number.isFinite);
+  return configuredIds.includes(ownerTelegramId);
+}
+
 function chatFestivalKey(chatId: string | number): string {
   return `ginder:chat:${chatId}:festival`;
 }
@@ -206,11 +219,13 @@ export async function clearPendingFestival(ownerTelegramId: number): Promise<voi
 }
 
 export async function getCreationCooldownSeconds(ownerTelegramId: number): Promise<number> {
+  if (isFestivalCreationRateLimitExempt(ownerTelegramId)) return 0;
   const ttl = await getRedis().ttl(cooldownKey(ownerTelegramId));
   return ttl > 0 ? ttl : 0;
 }
 
 export async function claimCreationSlot(ownerTelegramId: number): Promise<boolean> {
+  if (isFestivalCreationRateLimitExempt(ownerTelegramId)) return true;
   const result = await getRedis().set(cooldownKey(ownerTelegramId), "1", {
     ex: FESTIVAL_CREATION_COOLDOWN_SECONDS,
     nx: true,

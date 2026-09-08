@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireEnv } from "@/src/lib/env";
+import { syncTelegramCommandUi } from "@/src/lib/telegram-command-ui";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
 export const runtime = "nodejs";
@@ -17,27 +18,6 @@ async function telegram(method: string, body: Record<string, unknown> = {}) {
   if (!payload.ok) throw new Error(payload.description ?? `Telegram ${method} failed`);
   return payload.result;
 }
-
-const defaultCommands = [
-  { command: "start", description: "Open Ginder" },
-  { command: "festival", description: "Maak of beheer een festival" },
-  { command: "menu", description: "Toon het festivalmenu" },
-  { command: "timetable", description: "Nu + wat start binnen 60 min" },
-  { command: "live", description: "Wie draait er nu?" },
-  { command: "meet", description: "Maak een groepsafspraak" },
-  { command: "tent", description: "Bewaar je huidige tentplek" },
-  { command: "group", description: "Toon groepsstatus" },
-  { command: "map", description: "Festivalkaart + live kaart" },
-  { command: "programma", description: "Zoek een artiest" },
-  { command: "ping", description: "Melding 15 min voor een artiest" },
-  { command: "pings", description: "Mijn actieve meldingen" },
-  { command: "unping", description: "Verwijder een melding" },
-  { command: "straks", description: "Sets die binnen 60 min starten" },
-  { command: "id", description: "Toon mijn Telegram user ID" },
-  { command: "help", description: "Toon alle commando's" },
-];
-
-const groupCommands = defaultCommands.filter((command) => !["start", "festival"].includes(command.command));
 
 export async function POST(request: Request) {
   const configuredSecret = process.env.WEBHOOK_ADMIN_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -60,11 +40,7 @@ export async function POST(request: Request) {
       allowed_updates: ["message", "callback_query"],
       drop_pending_updates: false,
     });
-    await telegram("setMyCommands", { commands: defaultCommands });
-    await telegram("setMyCommands", {
-      scope: { type: "all_group_chats" },
-      commands: groupCommands,
-    });
+    await syncTelegramCommandUi(true);
     const webhookInfo = await telegram("getWebhookInfo");
     return NextResponse.json({ ok: true, webhookUrl, webhookInfo });
   } catch (error) {

@@ -270,7 +270,9 @@ async function requestFestivalMap(message: TelegramMessage, festival: PersistedF
       : "Liefst het originele bestand of de hoogste resolutie die je hebt.",
     "",
     "Toch niet? /festival cancel",
-  ].join("\n"));
+  ].join("\n"), {
+    reply_markup: { remove_keyboard: true },
+  });
 }
 
 async function requestFestivalGroup(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
@@ -520,13 +522,18 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
   const largestPhoto = photos.length
     ? [...photos].sort((a, b) => b.width * b.height - a.width * a.height)[0]
     : null;
-  const imageDocument = message.document?.mime_type?.startsWith("image/") ? message.document : null;
+  const document = message.document;
+  const fileName = document?.file_name?.toLowerCase() ?? "";
+  const imageDocument = document && (
+    document.mime_type?.startsWith("image/")
+    || /\.(?:png|jpe?g|webp|heic|heif)$/i.test(fileName)
+  ) ? document : null;
   const fileId = imageDocument?.file_id ?? largestPhoto?.file_id;
   if (!fileId) return false;
 
   const current = await getCurrentFestivalForOwner(message.from.id);
   const awaitingReplacement = await getFestivalAwaitingMapUpload(message.from.id);
-  const festival = awaitingReplacement ?? (current?.status === "map" ? current : null);
+  const festival = awaitingReplacement ?? (current && !current.mapImageUrl ? current : null);
   if (!festival) return false;
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
   if (!appUrl) throw new Error("APP_URL is not configured");
@@ -728,6 +735,32 @@ export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Prom
   if (command === "/start" && args.toLowerCase() === "festival") {
     if (await showCurrentFestival(message)) return true;
     await startFestivalCreation(message, "");
+    return true;
+  }
+
+  if (isPrivate(message.chat) && ["/start", "/menu", "/help"].includes(command)) {
+    if (await showCurrentFestival(message)) return true;
+    await sendMessage(message.chat.id, [
+      "📍 Ginder",
+      "",
+      "In privé maak en beheer je een festival.",
+      "Gebruik /festival om te starten. Kaart, timetable, live en groepsacties horen daarna in de gekoppelde festivalgroep.",
+    ].join("\n"), { reply_markup: { remove_keyboard: true } });
+    return true;
+  }
+
+  if (isPrivate(message.chat) && command === "/id") {
+    await sendMessage(message.chat.id, `🪪 Jouw Telegram user ID is:\n${message.from.id}`, {
+      reply_markup: { remove_keyboard: true },
+    });
+    return true;
+  }
+
+  if (isPrivate(message.chat) && command.startsWith("/")) {
+    await sendMessage(message.chat.id, [
+      "Die actie hoort in je festivalgroep.",
+      "In deze privéchat gebruik je /festival of /menu voor setup en beheer.",
+    ].join("\n"), { reply_markup: { remove_keyboard: true } });
     return true;
   }
 
