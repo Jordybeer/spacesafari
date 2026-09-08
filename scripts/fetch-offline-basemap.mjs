@@ -79,7 +79,7 @@ async function fetchMap() {
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const response = await fetch(url, {
-        headers: { "user-agent": "SpaceSafariFestivalAssistant/1.0 (+https://spacesafari.jordy.beer)" },
+        headers: { "user-agent": "GinderFestivalCompanion/1.0 (+https://ginder.jordy.beer)" },
         signal: AbortSignal.timeout(45_000),
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
