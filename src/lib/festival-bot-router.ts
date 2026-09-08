@@ -186,28 +186,25 @@ async function startFestivalCreation(message: TelegramMessage, rawName: string):
   await askForGroup(message.chat.id, pending);
 }
 
-async function onboardingMessages(festival: PersistedFestival, setupToken: string): Promise<void> {
+export async function onboardingMessages(festival: PersistedFestival): Promise<void> {
   if (festival.chatId === null) return;
   const roomToken = privateRoomToken(festival.chatId);
   const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
-  const configUrl = setupUrl(festival, setupToken);
 
   await sendMessage(festival.chatId, [
     `👋 Welkom bij Ginder voor ${festival.name} ${festival.year}.`,
     "",
-    "Deze groep is nu gekoppeld. Jij blijft gewoon eigenaar van de groep; Ginder gebruikt alleen de rechten die nodig zijn voor de festivaltools.",
+    "Deze groep is nu gekoppeld. De maker beheert de festivalsetup privé; Ginder gebruikt hier alleen de rechten die nodig zijn voor de festivaltools.",
   ].join("\n"));
 
   await sendMessage(festival.chatId, [
-    "🗺 Eerst de kaart klaarzetten:",
-    "1. Stuur de festivalkaart naar Ginder in privé. Liefst het originele bestand / de hoogste resolutie die je hebt.",
-    "2. Open daarna ‘Festival instellen’ hieronder.",
-    "3. Zet het terreincentrum en leg liefst 4–6 vaste, goed verspreide ankers op herkenbare plekken. Twee werkt technisch, meer is stabieler.",
-    "4. Daarna komt de timetable aan de beurt.",
+    "🗺 De maker zet eerst de kaart klaar:",
+    "1. Festivalkaart privé naar Ginder sturen. Liefst het originele bestand / de hoogste resolutie.",
+    "2. Terreincentrum en liefst 4–6 vaste, goed verspreide ankers instellen. Twee werkt technisch, meer is stabieler.",
+    "3. Daarna komt de timetable aan de beurt.",
   ].join("\n"), {
     reply_markup: {
       inline_keyboard: [
-        [{ text: "⚙️ Festival instellen", url: configUrl }],
         [{ text: "🗺 Open kaart", url: mapUrl }],
       ],
     },
@@ -252,9 +249,12 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
       console.warn("Ginder could not create Telegram invite link", error);
     }
 
-    await onboardingMessages(festival, created.setupToken);
+    await onboardingMessages(festival);
+    const configUrl = setupUrl(festival, created.setupToken);
     await sendMessage(message.chat.id, `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
-      reply_markup: { remove_keyboard: true },
+      reply_markup: {
+        inline_keyboard: [[{ text: "⚙️ Festival instellen", url: configUrl }]],
+      },
     });
   } catch (error) {
     if (!created && error instanceof FestivalChatAlreadyLinkedError) {
