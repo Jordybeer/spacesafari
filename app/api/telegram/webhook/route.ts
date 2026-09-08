@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
+import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import type { TelegramUpdate } from "@/src/lib/telegram";
@@ -28,7 +29,11 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!(await routeFestivalLifecycleUpdate(update)) && !(await routeGroupCompanionUpdate(update))) {
+    if (
+      !(await routeFestivalBotSetupUpdate(update))
+      && !(await routeFestivalLifecycleUpdate(update))
+      && !(await routeGroupCompanionUpdate(update))
+    ) {
       await routeTelegramUpdate(update);
     }
     return NextResponse.json({ ok: true });
