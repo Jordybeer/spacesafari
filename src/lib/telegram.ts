@@ -117,6 +117,10 @@ export async function createChatInviteLink(chatId: string | number, name = "Gind
   });
 }
 
+export async function leaveChat(chatId: string | number): Promise<void> {
+  await callTelegram<boolean>("leaveChat", { chat_id: chatId });
+}
+
 export async function getTelegramFilePath(fileId: string): Promise<string> {
   const file = await callTelegram<{ file_path?: string }>("getFile", { file_id: fileId });
   if (!file.file_path) throw new Error("Telegram gaf geen bestandspad terug.");
