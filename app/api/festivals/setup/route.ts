@@ -14,9 +14,12 @@ import {
   type FestivalScheduleEntry,
 } from "@/src/lib/festival-schedule";
 import { deleteAnchor, listAnchors, saveAnchor } from "@/src/lib/map-model";
+import { sendMessage } from "@/src/lib/telegram";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+const TIMETABLE_CALLBACK_PREFIX = "fst:";
 
 const AnchorSchema = z.object({
   id: z.string().trim().min(1).max(80),
@@ -99,6 +102,7 @@ export async function POST(request: Request) {
     let festival = await verifyFestivalSetupToken(input.festivalId, input.token);
 
     if (input.action === "save") {
+      const previousStatus = festival.status;
       const oldAnchors = await listAnchors(festival.id);
       await Promise.all(oldAnchors.map((anchor) => deleteAnchor(anchor.id, festival.id)));
       const createdAt = new Date().toISOString();
@@ -127,6 +131,25 @@ export async function POST(request: Request) {
           ? {}
           : { telegramMapFileId: null }),
       });
+
+      if (status === "timetable" && previousStatus !== "timetable") {
+        try {
+          await sendMessage(festival.ownerTelegramId, [
+            `✅ Ankers opgeslagen voor ${festival.name}.`,
+            "Nog één stap: de timetable.",
+          ].join("\n"), {
+            reply_markup: {
+              inline_keyboard: [[{
+                text: "📅 Timetable sturen",
+                callback_data: `${TIMETABLE_CALLBACK_PREFIX}${festival.publicKey}`,
+                style: "primary",
+              }]],
+            },
+          });
+        } catch (error) {
+          console.warn("Ginder could not continue setup in Telegram after anchor save", error);
+        }
+      }
     }
 
     if (input.action === "save-timetable") {
