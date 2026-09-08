@@ -3,6 +3,7 @@ import { parseFestivalStartParam } from "./festival-links";
 import {
   DEFAULT_FESTIVAL_ID,
   SPACE_SAFARI_2026,
+  festivalStoragePrefix,
   getFestivalDefinition,
   normalizeFestivalId,
   type FestivalDefinition,
@@ -12,6 +13,7 @@ import { getRedis } from "./storage";
 
 const FESTIVALS_KEY = "ginder:festivals";
 const PENDING_TTL_SECONDS = 24 * 60 * 60;
+const MAP_UPLOAD_TTL_SECONDS = 15 * 60;
 const MAX_ADDITIONAL_SETUP_TOKENS = 5;
 export const FESTIVAL_CREATION_COOLDOWN_SECONDS = 7 * 24 * 60 * 60;
 
@@ -67,6 +69,14 @@ function publicFestivalKey(publicKey: string): string {
 
 function ownerCurrentFestivalKey(userId: number): string {
   return `ginder:user:${userId}:current-festival`;
+}
+
+function ownerFestivalsKey(userId: number): string {
+  return `ginder:user:${userId}:festivals`;
+}
+
+function mapUploadKey(userId: number): string {
+  return `ginder:user:${userId}:map-upload`;
 }
 
 function tokenHash(token: string): string {
@@ -213,12 +223,13 @@ export async function finalizePendingFestival(
   if (claimedChat === null) throw new FestivalChatAlreadyLinkedError();
 
   try {
-    await Promise.all([
-      redis.hset(FESTIVALS_KEY, { [festival.id]: festival }),
-      redis.set(publicFestivalKey(festival.publicKey), festival.id),
-      redis.set(ownerCurrentFestivalKey(festival.ownerTelegramId), festival.id),
-      redis.del(pendingKey(festival.ownerTelegramId)),
-    ]);
+    await redis.multi()
+      .hset(FESTIVALS_KEY, { [festival.id]: festival })
+      .set(publicFestivalKey(festival.publicKey), festival.id)
+      .set(ownerCurrentFestivalKey(festival.ownerTelegramId), festival.id)
+      .sadd(ownerFestivalsKey(festival.ownerTelegramId), festival.id)
+      .del(pendingKey(festival.ownerTelegramId))
+      .exec();
   } catch (error) {
     await redis.del(chatKey);
     throw error;
@@ -237,6 +248,75 @@ export async function getFestivalForChat(chatId: string | number): Promise<Festi
 export async function getCurrentFestivalForOwner(ownerTelegramId: number): Promise<PersistedFestival | null> {
   const id = await getRedis().get<string>(ownerCurrentFestivalKey(ownerTelegramId));
   return id ? await getPersistedFestival(id) : null;
+}
+
+export async function getFestivalsForOwner(ownerTelegramId: number): Promise<PersistedFestival[]> {
+  const redis = getRedis();
+  const [indexedIds, currentId] = await Promise.all([
+    redis.smembers<string[]>(ownerFestivalsKey(ownerTelegramId)),
+    redis.get<string>(ownerCurrentFestivalKey(ownerTelegramId)),
+  ]);
+  const legacyValues = indexedIds.length
+    ? []
+    : await redis.hvals(FESTIVALS_KEY) as unknown[];
+  const migratedIds = legacyValues
+    .filter((festival): festival is PersistedFestival => Boolean(
+      festival
+      && typeof festival === "object"
+      && "ownerTelegramId" in festival
+      && festival.ownerTelegramId === ownerTelegramId
+      && "id" in festival
+      && typeof festival.id === "string",
+    ))
+    .map((festival) => festival.id);
+  if (migratedIds.length) {
+    await Promise.all(migratedIds.map((id) => redis.sadd(ownerFestivalsKey(ownerTelegramId), id)));
+  }
+  const ids = [...new Set([...indexedIds, ...migratedIds, ...(currentId ? [currentId] : [])])];
+  const festivals = (await Promise.all(ids.map((id) => getPersistedFestival(id))))
+    .filter((festival): festival is PersistedFestival => Boolean(
+      festival && festival.ownerTelegramId === ownerTelegramId,
+    ));
+  return festivals.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+export async function selectFestivalForOwner(
+  ownerTelegramId: number,
+  selector: string,
+): Promise<PersistedFestival> {
+  const festival = await resolveFestivalDefinition(selector);
+  if (!festival || !("ownerTelegramId" in festival) || festival.ownerTelegramId !== ownerTelegramId) {
+    throw new Error("Festival niet gevonden voor deze eigenaar.");
+  }
+  await Promise.all([
+    getRedis().set(ownerCurrentFestivalKey(ownerTelegramId), festival.id),
+    getRedis().sadd(ownerFestivalsKey(ownerTelegramId), festival.id),
+  ]);
+  return festival as PersistedFestival;
+}
+
+export async function beginFestivalMapUpload(
+  ownerTelegramId: number,
+  festivalId: string,
+): Promise<PersistedFestival> {
+  const festival = await selectFestivalForOwner(ownerTelegramId, festivalId);
+  await getRedis().set(mapUploadKey(ownerTelegramId), festival.id, { ex: MAP_UPLOAD_TTL_SECONDS });
+  return festival;
+}
+
+export async function getFestivalAwaitingMapUpload(ownerTelegramId: number): Promise<PersistedFestival | null> {
+  const id = await getRedis().get<string>(mapUploadKey(ownerTelegramId));
+  if (!id) return null;
+  const festival = await getPersistedFestival(id);
+  if (!festival || festival.ownerTelegramId !== ownerTelegramId) {
+    await getRedis().del(mapUploadKey(ownerTelegramId));
+    return null;
+  }
+  return festival;
+}
+
+export async function clearFestivalMapUpload(ownerTelegramId: number): Promise<void> {
+  await getRedis().del(mapUploadKey(ownerTelegramId));
 }
 
 export async function issueFestivalSetupToken(
@@ -292,6 +372,30 @@ export async function updatePersistedFestival(
     updatedAt: new Date().toISOString(),
   };
   await getRedis().hset(FESTIVALS_KEY, { [next.id]: next });
+  return next;
+}
+
+export async function replacePersistedFestivalMap(
+  festivalId: string,
+  map: Pick<PersistedFestival,
+    | "mapImageUrl"
+    | "mapImageWidth"
+    | "mapImageHeight"
+    | "telegramMapFileId"
+  >,
+): Promise<PersistedFestival> {
+  const current = await getPersistedFestival(festivalId);
+  if (!current) throw new Error("Festival niet gevonden.");
+  const next: PersistedFestival = {
+    ...current,
+    ...map,
+    status: "anchors",
+    updatedAt: new Date().toISOString(),
+  };
+  await getRedis().multi()
+    .hset(FESTIVALS_KEY, { [next.id]: next })
+    .del(`${festivalStoragePrefix(next.id)}:map:anchors`)
+    .exec();
   return next;
 }
 
