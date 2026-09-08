@@ -25,7 +25,13 @@ export const GROUP_BOT_COMMANDS: TelegramBotCommand[] = [
   { command: "pings", description: "Mijn actieve meldingen" },
   { command: "unping", description: "Verwijder een melding" },
   { command: "straks", description: "Sets die binnen 60 min starten" },
+  { command: "id", description: "Toon mijn Telegram user ID" },
   { command: "help", description: "Toon alle groepscommando's" },
+];
+
+export const GROUP_ADMIN_BOT_COMMANDS: TelegramBotCommand[] = [
+  ...GROUP_BOT_COMMANDS,
+  { command: "mapadmin", description: "Beheer kaartkalibratie" },
 ];
 
 const COMMAND_SYNC_INTERVAL_MS = 10 * 60 * 1000;
@@ -41,6 +47,7 @@ export async function syncTelegramCommandUi(force = false): Promise<void> {
     await setBotCommands(PRIVATE_BOT_COMMANDS);
     await setBotCommands(PRIVATE_BOT_COMMANDS, { type: "all_private_chats" });
     await setBotCommands(GROUP_BOT_COMMANDS, { type: "all_group_chats" });
+    await setBotCommands(GROUP_ADMIN_BOT_COMMANDS, { type: "all_chat_administrators" });
     await setCommandsMenuButton();
     lastSyncAt = Date.now();
   })();
