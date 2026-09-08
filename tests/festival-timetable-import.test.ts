@@ -37,7 +37,7 @@ describe("festival timetable text import", () => {
     );
 
     expect(Date.parse(entry.endsAt)).toBeGreaterThan(Date.parse(entry.startsAt));
-    expect(new Date(entry.endsAt).getUTCDate()).not.toBe(new Date(entry.startsAt).getUTCDate());
+    expect(Date.parse(entry.endsAt) - Date.parse(entry.startsAt)).toBe(90 * 60 * 1000);
   });
 
   it("parses the compact pasted format and produces a short preview", () => {
