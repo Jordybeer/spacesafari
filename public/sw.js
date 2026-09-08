@@ -1,4 +1,4 @@
-const CACHE = "space-safari-static-v12";
+const CACHE = "ginder-static-v13";
 const TELEGRAM_BRIDGE = "https://telegram.org/js/telegram-web-app.js?63";
 const CORE = [
   "/map",
@@ -25,12 +25,16 @@ async function precacheMapShell(cache) {
     const assetUrls = new Set(
       [...html.matchAll(/(?:src|href)="([^"#?]+(?:\?[^"#]*)?)"/g)]
         .map((match) => match[1])
-        .filter((value) => value.startsWith("/_next/static/") || value.startsWith("/festival-")),
+        .filter((value) => value.startsWith("/_next/static/") || value.startsWith("/festival-") || value.startsWith("/ginder-")),
     );
     await Promise.all([...assetUrls].map((url) => cacheOne(cache, url)));
   } catch {
-    // Explicit core files still leave a usable festival map offline.
+    // Explicit core files still leave the built-in festival map usable offline.
   }
+}
+
+function isFestivalMapImage(url) {
+  return url.origin === self.location.origin && /^\/api\/festivals\/[^/]+\/map-image$/.test(url.pathname);
 }
 
 self.addEventListener("install", (event) => {
@@ -56,7 +60,26 @@ self.addEventListener("fetch", (event) => {
   const isSameOrigin = url.origin === self.location.origin;
   const isTelegramBridge = event.request.url === TELEGRAM_BRIDGE;
   if (!isSameOrigin && !isTelegramBridge) return;
-  if (isSameOrigin && url.pathname.startsWith("/api/")) return;
+
+  const festivalMapImage = isFestivalMapImage(url);
+  if (isSameOrigin && url.pathname.startsWith("/api/") && !festivalMapImage) return;
+
+  // User-created festival maps are proxied through an API route. Keep that
+  // one image route network-first so a replaced map refreshes online while
+  // the most recently viewed copy remains available when festival reception dies.
+  if (festivalMapImage) {
+    event.respondWith((async () => {
+      const cache = await caches.open(CACHE);
+      try {
+        const response = await fetch(event.request);
+        if (response.ok) await cache.put(event.request, response.clone());
+        return response;
+      } catch {
+        return (await cache.match(event.request)) || Response.error();
+      }
+    })());
+    return;
+  }
 
   if (event.request.mode === "navigate") {
     event.respondWith((async () => {
