@@ -2,11 +2,12 @@ import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
 import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
-import { getCurrentFestivalForOwner, getFestivalForChat } from "@/src/lib/festival-store";
+import { recoverFestivalForChat } from "@/src/lib/festival-chat-recovery";
+import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
 import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import { syncTelegramCommandUi } from "@/src/lib/telegram-command-ui";
-import { setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
+import { sendMessage, setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
 export const runtime = "nodejs";
@@ -20,21 +21,10 @@ function isGroupChat(chat: TelegramChat | undefined): boolean {
   return chat?.type === "group" || chat?.type === "supergroup";
 }
 
-function couldNeedLegacyGroupRouter(update: TelegramUpdate): boolean {
+function commandFromUpdate(update: TelegramUpdate): string {
   const text = update.message?.text?.trim() ?? "";
-  const callbackData = update.callback_query?.data ?? "";
-  return text.startsWith("/") || /^(?:p|m):/.test(callbackData);
-}
-
-async function shouldUseLegacyGroupRouter(update: TelegramUpdate, chat: TelegramChat): Promise<boolean> {
-  if (!couldNeedLegacyGroupRouter(update)) return false;
-  try {
-    const festival = await getFestivalForChat(chat.id);
-    return festival.id === DEFAULT_FESTIVAL_ID;
-  } catch (error) {
-    console.warn("Ginder could not resolve legacy group fallback", error);
-    return false;
-  }
+  const [raw = ""] = text.split(/\s+/);
+  return raw.split("@")[0].toLowerCase();
 }
 
 async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
@@ -72,6 +62,27 @@ async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void>
   });
 }
 
+async function routeGroupUpdate(update: TelegramUpdate, chat: TelegramChat): Promise<void> {
+  if (commandFromUpdate(update) === "/id") {
+    await routeTelegramUpdate(update);
+    return;
+  }
+
+  const festival = await recoverFestivalForChat(chat.id);
+  if (!festival) {
+    await sendMessage(chat.id, [
+      "Deze groep heeft geen geldige Ginder-koppeling meer.",
+      "De festivalmaker kan in privé /festival openen en de groep opnieuw koppelen.",
+    ].join("\n"));
+    return;
+  }
+
+  if (await routeGroupCompanionUpdate(update)) return;
+  if (festival.id === DEFAULT_FESTIVAL_ID) {
+    await routeTelegramUpdate(update);
+  }
+}
+
 export async function POST(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!expected) {
@@ -101,10 +112,8 @@ export async function POST(request: Request) {
         await continueFreshFestivalSetup(update);
       } else {
         const chat = updateChat(update);
-        if (isGroupChat(chat)) {
-          if (!(await routeGroupCompanionUpdate(update)) && chat && await shouldUseLegacyGroupRouter(update, chat)) {
-            await routeTelegramUpdate(update);
-          }
+        if (isGroupChat(chat) && chat) {
+          await routeGroupUpdate(update, chat);
         } else if (chat?.type !== "private") {
           await routeTelegramUpdate(update);
         }
