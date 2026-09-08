@@ -1,12 +1,33 @@
 import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
+import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
+import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import type { TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void> {
+  const message = update.message;
+  const userId = message?.from?.id;
+  const sharedChatId = message?.chat_shared?.chat_id;
+  if (!message || !userId || !sharedChatId || message.chat.type !== "private") return;
+
+  const festival = await getCurrentFestivalForOwner(userId);
+  if (!festival || festival.chatId !== sharedChatId || festival.status === "ready") return;
+
+  await routeFestivalBotSetupUpdate({
+    ...update,
+    message: {
+      ...message,
+      text: "/festival setup",
+      chat_shared: undefined,
+    },
+  });
+}
 
 export async function POST(request: Request) {
   const expected = process.env.TELEGRAM_WEBHOOK_SECRET;
@@ -28,8 +49,14 @@ export async function POST(request: Request) {
   }
 
   try {
-    if (!(await routeFestivalLifecycleUpdate(update)) && !(await routeGroupCompanionUpdate(update))) {
-      await routeTelegramUpdate(update);
+    const setupHandled = await routeFestivalBotSetupUpdate(update);
+    if (!setupHandled) {
+      const lifecycleHandled = await routeFestivalLifecycleUpdate(update);
+      if (lifecycleHandled) {
+        await continueFreshFestivalSetup(update);
+      } else if (!(await routeGroupCompanionUpdate(update))) {
+        await routeTelegramUpdate(update);
+      }
     }
     return NextResponse.json({ ok: true });
   } catch (error) {

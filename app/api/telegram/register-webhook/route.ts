@@ -18,6 +18,27 @@ async function telegram(method: string, body: Record<string, unknown> = {}) {
   return payload.result;
 }
 
+const defaultCommands = [
+  { command: "start", description: "Open Ginder" },
+  { command: "festival", description: "Maak of beheer een festival" },
+  { command: "menu", description: "Toon het festivalmenu" },
+  { command: "timetable", description: "Nu + wat start binnen 60 min" },
+  { command: "live", description: "Wie draait er nu?" },
+  { command: "meet", description: "Maak een groepsafspraak" },
+  { command: "tent", description: "Bewaar je huidige tentplek" },
+  { command: "group", description: "Toon groepsstatus" },
+  { command: "map", description: "Festivalkaart + live kaart" },
+  { command: "programma", description: "Zoek een artiest" },
+  { command: "ping", description: "Melding 15 min voor een artiest" },
+  { command: "pings", description: "Mijn actieve meldingen" },
+  { command: "unping", description: "Verwijder een melding" },
+  { command: "straks", description: "Sets die binnen 60 min starten" },
+  { command: "id", description: "Toon mijn Telegram user ID" },
+  { command: "help", description: "Toon alle commando's" },
+];
+
+const groupCommands = defaultCommands.filter((command) => !["start", "festival"].includes(command.command));
+
 export async function POST(request: Request) {
   const configuredSecret = process.env.WEBHOOK_ADMIN_SECRET || process.env.TELEGRAM_WEBHOOK_SECRET;
   if (!configuredSecret) {
@@ -39,25 +60,10 @@ export async function POST(request: Request) {
       allowed_updates: ["message", "callback_query"],
       drop_pending_updates: false,
     });
+    await telegram("setMyCommands", { commands: defaultCommands });
     await telegram("setMyCommands", {
-      commands: [
-        { command: "start", description: "Open Ginder" },
-        { command: "festival", description: "Maak of beheer een festival" },
-        { command: "menu", description: "Toon het festivalmenu" },
-        { command: "timetable", description: "Nu + wat start binnen 60 min" },
-        { command: "live", description: "Wie draait er nu?" },
-        { command: "meet", description: "Maak een groepsafspraak" },
-        { command: "tent", description: "Bewaar je huidige tentplek" },
-        { command: "group", description: "Toon groepsstatus" },
-        { command: "map", description: "Festivalkaart + live kaart" },
-        { command: "programma", description: "Zoek een artiest" },
-        { command: "ping", description: "Melding 15 min voor een artiest" },
-        { command: "pings", description: "Mijn actieve meldingen" },
-        { command: "unping", description: "Verwijder een melding" },
-        { command: "straks", description: "Sets die binnen 60 min starten" },
-        { command: "id", description: "Toon mijn Telegram user ID" },
-        { command: "help", description: "Toon alle commando's" },
-      ],
+      scope: { type: "all_group_chats" },
+      commands: groupCommands,
     });
     const webhookInfo = await telegram("getWebhookInfo");
     return NextResponse.json({ ok: true, webhookUrl, webhookInfo });
