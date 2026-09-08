@@ -4,6 +4,7 @@ import {
   clearPendingFestival,
   consumeFestivalNamePrompt,
   createPendingFestival,
+  FestivalChatAlreadyLinkedError,
   festivalMapStartParam,
   finalizePendingFestival,
   getCreationCooldownSeconds,
@@ -256,6 +257,16 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
       reply_markup: { remove_keyboard: true },
     });
   } catch (error) {
+    if (!created && error instanceof FestivalChatAlreadyLinkedError) {
+      await releaseCreationSlot(userId);
+      await sendMessage(message.chat.id, [
+        "Die groep is al gekoppeld aan een ander festival in Ginder.",
+        "Kies een andere groep. Er is niets van je 7-dagenlimiet verbruikt.",
+      ].join("\n"));
+      await askForGroup(message.chat.id, pending);
+      return;
+    }
+
     console.error("Festival group linking failed", error);
     if (!created) {
       await releaseCreationSlot(userId);
