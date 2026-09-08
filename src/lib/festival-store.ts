@@ -38,6 +38,13 @@ export interface PendingFestivalCreation {
   createdAt: string;
 }
 
+export class FestivalChatAlreadyLinkedError extends Error {
+  constructor() {
+    super("Deze Telegram-groep is al gekoppeld aan een ander festival.");
+    this.name = "FestivalChatAlreadyLinkedError";
+  }
+}
+
 function pendingKey(userId: number): string {
   return `ginder:festival:pending:${userId}`;
 }
@@ -201,13 +208,21 @@ export async function finalizePendingFestival(
     telegramMapFileId: null,
   };
 
-  await Promise.all([
-    redis.hset(FESTIVALS_KEY, { [festival.id]: festival }),
-    redis.set(publicFestivalKey(festival.publicKey), festival.id),
-    redis.set(chatFestivalKey(chat.id), festival.id),
-    redis.set(ownerCurrentFestivalKey(festival.ownerTelegramId), festival.id),
-    redis.del(pendingKey(festival.ownerTelegramId)),
-  ]);
+  const chatKey = chatFestivalKey(chat.id);
+  const claimedChat = await redis.set(chatKey, festival.id, { nx: true });
+  if (claimedChat === null) throw new FestivalChatAlreadyLinkedError();
+
+  try {
+    await Promise.all([
+      redis.hset(FESTIVALS_KEY, { [festival.id]: festival }),
+      redis.set(publicFestivalKey(festival.publicKey), festival.id),
+      redis.set(ownerCurrentFestivalKey(festival.ownerTelegramId), festival.id),
+      redis.del(pendingKey(festival.ownerTelegramId)),
+    ]);
+  } catch (error) {
+    await redis.del(chatKey);
+    throw error;
+  }
   return { festival, setupToken };
 }
 
