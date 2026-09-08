@@ -80,13 +80,13 @@ function companionKeyboard() {
     ],
     is_persistent: true,
     resize_keyboard: true,
-    input_field_placeholder: "Space Safari…",
+    input_field_placeholder: "Ginder…",
   };
 }
 
 function helpText() {
   return [
-    "🛸 Space Safari Assistant",
+    "📍 Ginder",
     "",
     "/menu — toon het festivalmenu",
     "/wie — wie draait er nu?",
@@ -102,7 +102,7 @@ function helpText() {
   ].join("\n");
 }
 
-async function sendCompanionMenu(chatId: string | number, intro = "🪐 Space Companion staat klaar.") {
+async function sendCompanionMenu(chatId: string | number, intro = "📍 Ginder staat klaar.") {
   await sendMessage(chatId, intro, { reply_markup: companionKeyboard() });
 }
 
