@@ -37,13 +37,22 @@ const BUILT_IN_FESTIVALS = new Map<string, FestivalDefinition>([
   [SPACE_SAFARI_2026.id, SPACE_SAFARI_2026],
 ]);
 
+/**
+ * Custom festival IDs and public selectors contain an opaque random suffix, so their
+ * casing is significant for persisted Redis keys. Only trim here; built-in lookups
+ * and storage namespaces canonicalize separately where lowercase is intentional.
+ */
 export function normalizeFestivalId(value?: string | null): string {
-  const normalized = value?.trim().toLowerCase();
+  const normalized = value?.trim();
   return normalized || DEFAULT_FESTIVAL_ID;
 }
 
+function canonicalFestivalStorageId(value?: string | null): string {
+  return normalizeFestivalId(value).toLowerCase();
+}
+
 export function getFestivalDefinition(value?: string | null): FestivalDefinition | null {
-  return BUILT_IN_FESTIVALS.get(normalizeFestivalId(value)) ?? null;
+  return BUILT_IN_FESTIVALS.get(canonicalFestivalStorageId(value)) ?? null;
 }
 
 export function requireFestivalDefinition(value?: string | null): FestivalDefinition {
@@ -58,6 +67,6 @@ export function requireFestivalDefinition(value?: string | null): FestivalDefini
  * festival instance. New festivals use the explicit Ginder namespace.
  */
 export function festivalStoragePrefix(value?: string | null): string {
-  const id = normalizeFestivalId(value);
+  const id = canonicalFestivalStorageId(value);
   return id === DEFAULT_FESTIVAL_ID ? "ss" : `ginder:festival:${id}`;
 }
