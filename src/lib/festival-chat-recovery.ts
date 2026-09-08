@@ -1,5 +1,5 @@
 import type { FestivalDefinition } from "./festivals";
-import { getFestivalForChat, isFestivalChatDisabled } from "./festival-store";
+import { getFestivalForChat, getPersistedFestival, isFestivalChatDisabled } from "./festival-store";
 import { getRedis } from "./storage";
 
 const FESTIVALS_KEY = "ginder:festivals";
@@ -25,8 +25,27 @@ function recoverableFestival(value: unknown, chatId: string | number): Recoverab
   return candidate as RecoverableFestival;
 }
 
+async function recoverDisabledLink(chatId: string | number): Promise<FestivalDefinition | null> {
+  const redis = getRedis();
+  const disabledFestivalId = await redis.get<string>(disabledChatKey(chatId));
+  if (!disabledFestivalId) return null;
+
+  const festival = await getPersistedFestival(disabledFestivalId);
+  if (!festival || festival.archivedAt || festival.chatId !== Number(chatId)) return null;
+
+  await redis.multi()
+    .set(chatFestivalKey(chatId), festival.id)
+    .del(disabledChatKey(chatId))
+    .exec();
+  return festival;
+}
+
 export async function recoverFestivalForChat(chatId: string | number): Promise<FestivalDefinition | null> {
-  if (await isFestivalChatDisabled(chatId)) return null;
+  if (await isFestivalChatDisabled(chatId)) {
+    // Intentional unlink/archive clears chatId first, so only revive a disabled key
+    // when the persisted festival still explicitly owns this exact Telegram chat.
+    return await recoverDisabledLink(chatId);
+  }
 
   try {
     return await getFestivalForChat(chatId);
