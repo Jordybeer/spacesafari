@@ -7,6 +7,7 @@ const telegram = vi.hoisted(() => ({
     text?: string,
   ) => Promise<void>>(async () => undefined),
   createChatInviteLink: vi.fn(async () => ({ invite_link: "https://t.me/+example" })),
+  getTelegramFilePath: vi.fn(async () => "files/example"),
   leaveChat: vi.fn<(chatId: string | number) => Promise<void>>(async () => undefined),
   sendMessage: vi.fn<(
     chatId: string | number,
@@ -18,11 +19,14 @@ const telegram = vi.hoisted(() => ({
 vi.mock("@/src/lib/telegram", () => ({
   answerCallbackQuery: telegram.answerCallbackQuery,
   createChatInviteLink: telegram.createChatInviteLink,
+  getTelegramFilePath: telegram.getTelegramFilePath,
   leaveChat: telegram.leaveChat,
   mapMiniAppUrl: vi.fn(() => "https://t.me/ginder?startapp=festival-room"),
   sendMessage: telegram.sendMessage,
+  telegramFileUrl: vi.fn(() => "https://example.test/file"),
 }));
 
+import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { onboardingMessages, routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
 import * as festivalStore from "@/src/lib/festival-store";
 import type { PendingFestivalCreation, PersistedFestival } from "@/src/lib/festival-store";
@@ -65,9 +69,11 @@ function pendingFestival(): PendingFestivalCreation {
 
 beforeEach(() => {
   vi.stubEnv("MAP_ROOM_SECRET", "test-room-secret");
+  vi.stubEnv("APP_URL", "https://ginder.example");
   telegram.sendMessage.mockClear();
   telegram.answerCallbackQuery.mockClear();
   telegram.createChatInviteLink.mockClear();
+  telegram.getTelegramFilePath.mockClear();
   telegram.leaveChat.mockClear();
 });
 
@@ -129,7 +135,45 @@ describe("festival onboarding privacy", () => {
     expect(JSON.stringify(options)).not.toContain("festival-setup");
   });
 
-  it("arms map upload and explains the actual Telegram attachment action", async () => {
+  it("uses the owner dashboard for /menu in private instead of the group companion menu", async () => {
+    vi.spyOn(festivalStore, "getCurrentFestivalForOwner").mockResolvedValue(festival());
+    vi.spyOn(festivalStore, "getCreationCooldownSeconds").mockResolvedValue(0);
+
+    expect(await routeFestivalLifecycleUpdate({
+      update_id: 3,
+      message: {
+        message_id: 4,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: 42, type: "private" },
+        text: "/menu",
+      },
+    })).toBe(true);
+
+    const payload = JSON.stringify(telegram.sendMessage.mock.calls);
+    expect(payload).toContain("Setup verder");
+    expect(payload).not.toContain("Timetable");
+    expect(payload).not.toContain("Nu live");
+  });
+
+  it("rejects group-only commands in private without opening the legacy Space Safari flow", async () => {
+    expect(await routeFestivalLifecycleUpdate({
+      update_id: 4,
+      message: {
+        message_id: 5,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: 42, type: "private" },
+        text: "/map",
+      },
+    })).toBe(true);
+
+    expect(telegram.sendMessage).toHaveBeenCalledWith(
+      42,
+      expect.stringContaining("hoort in je festivalgroep"),
+      { reply_markup: { remove_keyboard: true } },
+    );
+  });
+
+  it("arms map upload and restores the normal Telegram attachment composer", async () => {
     vi.spyOn(festivalStore, "getCurrentFestivalForOwner").mockResolvedValue(festival());
     const clearPending = vi.spyOn(festivalStore, "clearPendingFestival").mockResolvedValue(undefined);
     const clearName = vi.spyOn(festivalStore, "clearFestivalNamePrompt").mockResolvedValue(undefined);
@@ -137,9 +181,9 @@ describe("festival onboarding privacy", () => {
     const beginMap = vi.spyOn(festivalStore, "beginFestivalMapUpload").mockResolvedValue(festival());
 
     await routeFestivalLifecycleUpdate({
-      update_id: 3,
+      update_id: 5,
       message: {
-        message_id: 4,
+        message_id: 6,
         from: { id: 42, first_name: "Jordy" },
         chat: { id: 42, type: "private" },
         text: "/festival kaart",
@@ -150,10 +194,46 @@ describe("festival onboarding privacy", () => {
     expect(clearName).toHaveBeenCalledWith(42);
     expect(clearGroup).toHaveBeenCalledWith(42);
     expect(beginMap).toHaveBeenCalledWith(42, "horst-2027-abcd");
-    const copy = telegram.sendMessage.mock.calls.at(-1)?.[1] ?? "";
-    expect(copy).toContain("+ (of de paperclip)");
-    expect(copy).toContain("Foto of Bestand");
-    expect(copy).toContain("geen link");
+    const lastCall = telegram.sendMessage.mock.calls.at(-1);
+    expect(lastCall?.[1]).toContain("+ (of de paperclip)");
+    expect(lastCall?.[1]).toContain("Foto of Bestand");
+    expect(lastCall?.[1]).toContain("geen link");
+    expect(lastCall?.[2]).toEqual({ reply_markup: { remove_keyboard: true } });
+  });
+
+  it("accepts an image file even when Telegram labels it as a generic document", async () => {
+    const current = festival();
+    const updated = {
+      ...current,
+      mapImageUrl: "https://ginder.example/api/festivals/horst-2027-abcd/map-image",
+      telegramMapFileId: "file-map",
+    };
+    vi.spyOn(festivalStore, "getCurrentFestivalForOwner").mockResolvedValue(current);
+    vi.spyOn(festivalStore, "getFestivalAwaitingMapUpload").mockResolvedValue(null);
+    const updateFestival = vi.spyOn(festivalStore, "updatePersistedFestival").mockResolvedValue(updated);
+    const clearMap = vi.spyOn(festivalStore, "clearFestivalMapUpload").mockResolvedValue(undefined);
+
+    expect(await routeFestivalBotSetupUpdate({
+      update_id: 6,
+      message: {
+        message_id: 7,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: 42, type: "private" },
+        document: {
+          file_id: "file-map",
+          file_unique_id: "unique-map",
+          file_name: "festival-map.PNG",
+          mime_type: "application/octet-stream",
+        },
+      },
+    })).toBe(true);
+
+    expect(updateFestival).toHaveBeenCalledWith("horst-2027-abcd", expect.objectContaining({
+      telegramMapFileId: "file-map",
+      mapImageUrl: "https://ginder.example/api/festivals/horst-2027-abcd/map-image",
+    }));
+    expect(clearMap).toHaveBeenCalledWith(42);
+    expect(telegram.sendMessage.mock.calls.some(([, text]) => text.includes("Kaart ontvangen"))).toBe(true);
   });
 
   it("starts map upload immediately after a newly created festival is linked", async () => {
@@ -174,9 +254,9 @@ describe("festival onboarding privacy", () => {
     const beginMap = vi.spyOn(festivalStore, "beginFestivalMapUpload").mockResolvedValue(created);
 
     await routeFestivalLifecycleUpdate({
-      update_id: 4,
+      update_id: 7,
       message: {
-        message_id: 5,
+        message_id: 8,
         from: { id: 42, first_name: "Jordy" },
         chat: { id: 42, type: "private" },
         chat_shared: { request_id: 73, chat_id: -100123, title: "Horst crew" },
@@ -202,13 +282,13 @@ describe("festival onboarding privacy", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
 
     expect(await routeFestivalLifecycleUpdate({
-      update_id: 5,
+      update_id: 8,
       callback_query: {
         id: "archive-callback",
         data: "foarchiveyes:public42",
         from: { id: 42, first_name: "Jordy" },
         message: {
-          message_id: 6,
+          message_id: 9,
           chat: { id: 42, type: "private" },
         },
       },
@@ -224,9 +304,9 @@ describe("festival onboarding privacy", () => {
       .mockRejectedValue(new festivalStore.FestivalChatAlreadyLinkedError());
 
     await routeFestivalLifecycleUpdate({
-      update_id: 6,
+      update_id: 9,
       message: {
-        message_id: 7,
+        message_id: 10,
         from: { id: 42, first_name: "Jordy" },
         chat: { id: 42, type: "private" },
         chat_shared: { request_id: 73, chat_id: -1002, title: "Verkeerde groep" },
