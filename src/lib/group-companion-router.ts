@@ -1,5 +1,5 @@
 import { formatCurrent } from "./bot-router";
-import { festivalMapStartParam, getFestivalForChat } from "./festival-store";
+import { festivalMapStartParam, getFestivalForChat, isFestivalChatDisabled } from "./festival-store";
 import { DEFAULT_FESTIVAL_ID, type FestivalDefinition } from "./festivals";
 import { formatSet, setsStartingWithin } from "./festival-time";
 import {
@@ -68,6 +68,15 @@ function commandFromText(text: string): string {
 
 function commandArgs(text: string): string {
   return text.trim().split(/\s+/).slice(1).join(" ").trim();
+}
+
+const GROUP_COMMANDS = new Set([
+  "/start", "/help", "/menu", "/timetable", "/live", "/meet", "/tent", "/group", "/map",
+  "/mapadmin", "/wie", "/straks", "/programma", "/ping", "/pings", "/unping",
+]);
+
+function isGinderCallback(data?: string): boolean {
+  return Boolean(data && /^(?:p:|m:|gc:|gm:|gs:|gcp:)/.test(data));
 }
 
 function companionInlineKeyboard(chat: TelegramChat, festival: FestivalDefinition) {
@@ -471,6 +480,15 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
   if (
     callback?.message
     && isGroupChat(callback.message.chat)
+    && isGinderCallback(callback.data)
+    && await isFestivalChatDisabled(callback.message.chat.id)
+  ) {
+    await answerCallbackQuery(callback.id, "Deze groep is niet meer gekoppeld aan Ginder.");
+    return true;
+  }
+  if (
+    callback?.message
+    && isGroupChat(callback.message.chat)
     && callback.data
     && /^(?:p|m):/.test(callback.data)
   ) {
@@ -506,6 +524,15 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
   if (!message?.text) return false;
   const raw = message.text.trim();
   const command = commandFromText(raw);
+
+  if (
+    isGroupChat(message.chat)
+    && (GROUP_COMMANDS.has(command) || ["📅 Timetable", "🎵 Nu live", "📍 Meet", "⛺ Tent", "👥 Groep", "🗺 Kaart"].includes(raw))
+    && await isFestivalChatDisabled(message.chat.id)
+  ) {
+    await sendMessage(message.chat.id, "Deze groep is niet meer gekoppeld aan Ginder. De festivalmaker kan een groep koppelen via /festival in privé.");
+    return true;
+  }
 
   if (command === "/start" || command === "/help" || command === "/menu") {
     await showMenu(message.chat);

@@ -112,6 +112,17 @@ export async function deletePing(
   return removed > 0;
 }
 
+export async function clearFestivalPings(
+  chatId: string,
+  festivalId = DEFAULT_FESTIVAL_ID,
+): Promise<number> {
+  const redis = getRedis();
+  const ids = await redis.smembers<string[]>(pingIndex(chatId, festivalId));
+  await Promise.all(ids.map((id) => redis.del(pingKey(chatId, id, festivalId))));
+  await redis.del(pingIndex(chatId, festivalId));
+  return ids.length;
+}
+
 export async function getPing(
   chatId: string,
   setId: string,

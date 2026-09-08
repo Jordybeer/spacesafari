@@ -1,8 +1,12 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { SPACE_SAFARI_2026 } from "@/src/lib/festivals";
 import * as festivalStore from "@/src/lib/festival-store";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import * as telegram from "@/src/lib/telegram";
+
+beforeEach(() => {
+  vi.spyOn(festivalStore, "isFestivalChatDisabled").mockResolvedValue(false);
+});
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -79,6 +83,27 @@ describe("custom festival group boundaries", () => {
     expect(send).toHaveBeenCalledWith(
       -100123,
       "⚙️ Beheer de kaart van Horst via /festival in een privégesprek met Ginder.",
+    );
+  });
+
+  it("blocks festival commands after a group was deliberately unlinked", async () => {
+    vi.mocked(festivalStore.isFestivalChatDisabled).mockResolvedValue(true);
+    const send = vi.spyOn(telegram, "sendMessage").mockResolvedValue(undefined);
+
+    const handled = await routeGroupCompanionUpdate({
+      update_id: 4,
+      message: {
+        message_id: 10,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: -100123, type: "supergroup", title: "Oude crew" },
+        text: "/map",
+      },
+    });
+
+    expect(handled).toBe(true);
+    expect(send).toHaveBeenCalledWith(
+      -100123,
+      expect.stringContaining("niet meer gekoppeld aan Ginder"),
     );
   });
 });

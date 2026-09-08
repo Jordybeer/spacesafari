@@ -32,7 +32,7 @@ vi.mock("@vercel/queue", () => ({
   },
 }));
 
-import { createPing, deletePing, listPings, markPingSent } from "@/src/lib/pings";
+import { clearFestivalPings, createPing, deletePing, listPings, markPingSent } from "@/src/lib/pings";
 import { performerSets } from "@/src/data/timetable";
 
 describe("artist pings", () => {
@@ -91,5 +91,14 @@ describe("artist pings", () => {
     const { ping } = await createPing("42", set);
     await markPingSent(ping);
     expect(await listPings("42")).toHaveLength(0);
+  });
+
+  it("clears every pending ping when a festival group is disconnected", async () => {
+    const festivalId = "horst-2027-abcd";
+    await createPing("42", { id: "set-a", startsAt: "2027-07-10T20:00:00+02:00" }, festivalId);
+    await createPing("42", { id: "set-b", startsAt: "2027-07-10T21:00:00+02:00" }, festivalId);
+
+    expect(await clearFestivalPings("42", festivalId)).toBe(2);
+    expect(await listPings("42", festivalId)).toEqual([]);
   });
 });

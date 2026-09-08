@@ -76,17 +76,24 @@ vi.mock("@/src/lib/storage", () => ({
 }));
 
 import {
+  archiveFestivalForOwner,
+  beginFestivalGroupLink,
   FestivalChatAlreadyLinkedError,
   beginFestivalMapUpload,
   clearFestivalMapUpload,
   finalizePendingFestival,
+  finishFestivalGroupLink,
   getCurrentFestivalForOwner,
   getFestivalAwaitingMapUpload,
   getFestivalForChat,
   getFestivalsForOwner,
   getPersistedFestival,
+  isFestivalChatDisabled,
   replacePersistedFestivalMap,
+  resolveFestivalDefinition,
+  restoreFestivalForOwner,
   selectFestivalForOwner,
+  unlinkFestivalGroup,
   type PendingFestivalCreation,
 } from "@/src/lib/festival-store";
 
@@ -168,5 +175,45 @@ describe("festival Telegram group isolation", () => {
     expect(updated.status).toBe("anchors");
     expect(state.hashes.has(anchorsKey)).toBe(false);
     expect((await getPersistedFestival(created.festival.id))?.mapImageWidth).toBe(1200);
+  });
+
+  it("unlinks a group without falling back to Space Safari and can link a new group", async () => {
+    const created = await finalizePendingFestival(pending(42, "horst-2027-a"), { id: -1001 });
+    const unlinked = await unlinkFestivalGroup(42, created.festival.publicKey);
+
+    expect(unlinked.previousChatId).toBe(-1001);
+    expect(unlinked.festival.chatId).toBeNull();
+    expect(await isFestivalChatDisabled(-1001)).toBe(true);
+    await expect(getFestivalForChat(-1001)).rejects.toThrow("niet meer gekoppeld");
+
+    const request = await beginFestivalGroupLink(42, created.festival.id);
+    const relinked = await finishFestivalGroupLink(42, request.requestId, {
+      id: -1002,
+      title: "Nieuwe crew",
+    });
+    expect(relinked.chatId).toBe(-1002);
+    expect((await getFestivalForChat(-1002)).id).toBe(created.festival.id);
+  });
+
+  it("archives reversibly, disables public access and preserves festival data", async () => {
+    const created = await finalizePendingFestival(pending(42, "horst-2027-a"), { id: -1001 });
+    await replacePersistedFestivalMap(created.festival.id, {
+      mapImageUrl: "https://ginder.test/new-map",
+      mapImageWidth: 1200,
+      mapImageHeight: 900,
+      telegramMapFileId: "map-file",
+    });
+
+    const archived = await archiveFestivalForOwner(42, created.festival.publicKey);
+    expect(archived.festival.archivedAt).toBeTruthy();
+    expect(archived.festival.mapImageUrl).toBe("https://ginder.test/new-map");
+    expect(await resolveFestivalDefinition(created.festival.publicKey)).toBeNull();
+    expect(await getFestivalsForOwner(42)).toEqual([]);
+    expect(await getFestivalsForOwner(42, { includeArchived: true })).toHaveLength(1);
+
+    const restored = await restoreFestivalForOwner(42, created.festival.publicKey);
+    expect(restored.archivedAt).toBeNull();
+    expect(restored.mapImageUrl).toBe("https://ginder.test/new-map");
+    expect((await getCurrentFestivalForOwner(42))?.id).toBe(restored.id);
   });
 });

@@ -1,7 +1,10 @@
 import {
+  archiveFestivalForOwner,
+  beginFestivalGroupLink,
   beginFestivalMapUpload,
   beginFestivalNamePrompt,
   claimCreationSlot,
+  clearFestivalGroupLink,
   clearFestivalMapUpload,
   clearPendingFestival,
   consumeFestivalNamePrompt,
@@ -9,6 +12,7 @@ import {
   FestivalChatAlreadyLinkedError,
   festivalMapStartParam,
   finalizePendingFestival,
+  finishFestivalGroupLink,
   getCreationCooldownSeconds,
   getCurrentFestivalForOwner,
   getFestivalAwaitingMapUpload,
@@ -17,16 +21,20 @@ import {
   issueFestivalSetupToken,
   replacePersistedFestivalMap,
   releaseCreationSlot,
+  restoreFestivalForOwner,
   selectFestivalForOwner,
   setupUrl,
+  unlinkFestivalGroup,
   updatePersistedFestival,
   type PendingFestivalCreation,
   type PersistedFestival,
 } from "./festival-store";
 import { privateRoomToken } from "./map-model";
+import { clearFestivalPings } from "./pings";
 import {
   answerCallbackQuery,
   createChatInviteLink,
+  leaveChat,
   mapMiniAppUrl,
   sendMessage,
   type TelegramChat,
@@ -36,6 +44,12 @@ import {
 
 const OWNER_SELECT_PREFIX = "fo:";
 const OWNER_MAP_PREFIX = "fomap:";
+const OWNER_GROUP_PREFIX = "fogroup:";
+const OWNER_UNLINK_PREFIX = "founlink:";
+const OWNER_UNLINK_CONFIRM_PREFIX = "founlinkyes:";
+const OWNER_ARCHIVE_PREFIX = "foarchive:";
+const OWNER_ARCHIVE_CONFIRM_PREFIX = "foarchiveyes:";
+const OWNER_RESTORE_PREFIX = "forestore:";
 
 function commandAndArgs(text: string): { command: string; args: string } {
   const [raw = "", ...rest] = text.trim().split(/\s+/);
@@ -93,8 +107,28 @@ function adminRights() {
   };
 }
 
-async function askForGroup(chatId: number, pending: PendingFestivalCreation): Promise<void> {
+function groupRequestKeyboard(requestId: number) {
   const rights = adminRights();
+  return {
+    keyboard: [[{
+      text: "👥 Kies festivalgroep",
+      request_chat: {
+        request_id: requestId,
+        chat_is_channel: false,
+        chat_is_created: true,
+        user_administrator_rights: rights,
+        bot_administrator_rights: rights,
+        request_title: true,
+        request_username: true,
+      },
+    }]],
+    resize_keyboard: true,
+    one_time_keyboard: true,
+    input_field_placeholder: "Kies je festivalgroep…",
+  };
+}
+
+async function askForGroup(chatId: number, pending: PendingFestivalCreation): Promise<void> {
   await sendMessage(
     chatId,
     [
@@ -104,23 +138,7 @@ async function askForGroup(chatId: number, pending: PendingFestivalCreation): Pr
       "Heb je er nog geen? Maak eerst even een gewone groep in Telegram en kom dan terug naar deze knop.",
     ].join("\n"),
     {
-      reply_markup: {
-        keyboard: [[{
-          text: "👥 Kies festivalgroep",
-          request_chat: {
-            request_id: pending.requestId,
-            chat_is_channel: false,
-            chat_is_created: true,
-            user_administrator_rights: rights,
-            bot_administrator_rights: rights,
-            request_title: true,
-            request_username: true,
-          },
-        }]],
-        resize_keyboard: true,
-        one_time_keyboard: true,
-        input_field_placeholder: "Kies je festivalgroep…",
-      },
+      reply_markup: groupRequestKeyboard(pending.requestId),
     },
   );
 }
@@ -141,6 +159,18 @@ async function showOwnerFestival(message: TelegramMessage, current: PersistedFes
     text: "🖼 Kaart vervangen",
     callback_data: `${OWNER_MAP_PREFIX}${festival.publicKey}`,
   }]);
+  if (festival.chatId === null) rows.push([{
+    text: "👥 Groep koppelen",
+    callback_data: `${OWNER_GROUP_PREFIX}${festival.publicKey}`,
+  }]);
+  else rows.push([{
+    text: "🔌 Groep ontkoppelen",
+    callback_data: `${OWNER_UNLINK_PREFIX}${festival.publicKey}`,
+  }]);
+  rows.push([{
+    text: "📦 Festival archiveren",
+    callback_data: `${OWNER_ARCHIVE_PREFIX}${festival.publicKey}`,
+  }]);
 
   const newFestivalLine = cooldown > 0
     ? `Je kunt over ${cooldownText(cooldown)} weer een nieuw festival aanmaken.`
@@ -152,6 +182,7 @@ async function showOwnerFestival(message: TelegramMessage, current: PersistedFes
     festival.chatTitle ? `Groep: ${festival.chatTitle}` : null,
     "",
     "Wisselen tussen je festivals: /festival lijst",
+    "Archief bekijken: /festival archief",
     newFestivalLine,
   ].filter((line): line is string => Boolean(line)).join("\n"), {
     reply_markup: { inline_keyboard: rows },
@@ -189,6 +220,25 @@ async function showOwnedFestivals(message: TelegramMessage): Promise<void> {
   });
 }
 
+async function showArchivedFestivals(message: TelegramMessage): Promise<void> {
+  const userId = message.from?.id;
+  if (!userId || !isPrivate(message.chat)) return;
+  const festivals = (await getFestivalsForOwner(userId, { includeArchived: true }))
+    .filter((festival) => Boolean(festival.archivedAt));
+  if (!festivals.length) {
+    await sendMessage(message.chat.id, "Je archief is leeg.");
+    return;
+  }
+  await sendMessage(message.chat.id, "Gearchiveerde festivals:", {
+    reply_markup: {
+      inline_keyboard: festivals.map((festival) => [{
+        text: `↩️ ${festival.name} ${festival.year} terugzetten`,
+        callback_data: `${OWNER_RESTORE_PREFIX}${festival.publicKey}`,
+      }]),
+    },
+  });
+}
+
 async function requestFestivalMap(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
   await beginFestivalMapUpload(message.from!.id, festival.id);
   await sendMessage(message.chat.id, [
@@ -199,6 +249,35 @@ async function requestFestivalMap(message: TelegramMessage, festival: PersistedF
     "",
     "Toch niet? /festival cancel",
   ].join("\n"));
+}
+
+async function requestFestivalGroup(message: TelegramMessage, festival: PersistedFestival): Promise<void> {
+  const pending = await beginFestivalGroupLink(message.from!.id, festival.id);
+  await sendMessage(message.chat.id, [
+    `Kies de Telegram-groep voor ${festival.name} ${festival.year}.`,
+    "Ginder vraagt alleen de adminrechten die nodig zijn voor de festivaltools.",
+    "",
+    "Toch niet? /festival cancel",
+  ].join("\n"), {
+    reply_markup: groupRequestKeyboard(pending.requestId),
+  });
+}
+
+async function leaveFestivalChat(chatId: number): Promise<void> {
+  try {
+    await leaveChat(chatId);
+  } catch (error) {
+    console.warn("Ginder could not leave unlinked Telegram group", error);
+  }
+}
+
+async function deactivateFestivalChat(chatId: number, festivalId: string): Promise<void> {
+  try {
+    await clearFestivalPings(String(chatId), festivalId);
+  } catch (error) {
+    console.warn("Ginder could not clear pings for unlinked Telegram group", error);
+  }
+  await leaveFestivalChat(chatId);
 }
 
 async function startFestivalCreation(message: TelegramMessage, rawName: string): Promise<void> {
@@ -250,12 +329,18 @@ export async function onboardingMessages(festival: PersistedFestival): Promise<v
     "Deze groep is nu gekoppeld. De maker beheert de festivalsetup privé; Ginder gebruikt hier alleen de rechten die nodig zijn voor de festivaltools.",
   ].join("\n"));
 
-  await sendMessage(festival.chatId, [
-    "🗺 De maker zet eerst de kaart klaar:",
-    "1. Festivalkaart privé naar Ginder sturen. Liefst het originele bestand / de hoogste resolutie.",
-    "2. Terreincentrum en liefst 4–6 vaste, goed verspreide ankers instellen. Twee werkt technisch, meer is stabieler.",
-    "3. Daarna komt de timetable aan de beurt.",
-  ].join("\n"), {
+  const setupText = festival.status === "ready"
+    ? [
+      `🗺 ${festival.name} staat klaar.`,
+      "/menu voor alle festivaltools · /map voor de kaart.",
+    ]
+    : [
+      "🗺 De maker zet eerst de kaart klaar:",
+      "1. Festivalkaart privé naar Ginder sturen. Liefst het originele bestand / de hoogste resolutie.",
+      "2. Terreincentrum en liefst 4–6 vaste, goed verspreide ankers instellen. Twee werkt technisch, meer is stabieler.",
+      "3. Daarna komt de timetable aan de beurt.",
+    ];
+  await sendMessage(festival.chatId, setupText.join("\n"), {
     reply_markup: {
       inline_keyboard: [
         [{ text: "🗺 Open kaart", url: mapUrl }],
@@ -276,9 +361,32 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
 
   const pending = await getPendingFestival(userId);
   if (!pending || pending.requestId !== shared.request_id) {
-    await sendMessage(message.chat.id, "Die groepskeuze hoort niet meer bij een actieve festivalsetup. Gebruik /festival opnieuw.", {
-      reply_markup: { remove_keyboard: true },
-    });
+    try {
+      let festival = await finishFestivalGroupLink(userId, shared.request_id, {
+        id: shared.chat_id,
+        title: shared.title,
+      });
+      try {
+        const invite = await createChatInviteLink(shared.chat_id, `Ginder · ${festival.name}`);
+        festival = await updatePersistedFestival(festival.id, { inviteLink: invite.invite_link });
+      } catch (error) {
+        console.warn("Ginder could not create Telegram invite link", error);
+      }
+      await onboardingMessages(festival);
+      await sendMessage(message.chat.id, `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
+        reply_markup: { remove_keyboard: true },
+      });
+    } catch (error) {
+      if (error instanceof FestivalChatAlreadyLinkedError) {
+        await sendMessage(message.chat.id, "Die groep is al gekoppeld aan een ander festival. Kies een andere groep.", {
+          reply_markup: { remove_keyboard: true },
+        });
+      } else {
+        await sendMessage(message.chat.id, error instanceof Error ? error.message : "Koppelen lukte niet.", {
+          reply_markup: { remove_keyboard: true },
+        });
+      }
+    }
     return;
   }
 
@@ -382,20 +490,93 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
 
 export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Promise<boolean> {
   const callback = update.callback_query;
-  if (callback?.data?.startsWith(OWNER_SELECT_PREFIX) || callback?.data?.startsWith(OWNER_MAP_PREFIX)) {
+  const ownerPrefix = callback?.data
+    ? [
+      OWNER_UNLINK_CONFIRM_PREFIX,
+      OWNER_ARCHIVE_CONFIRM_PREFIX,
+      OWNER_SELECT_PREFIX,
+      OWNER_MAP_PREFIX,
+      OWNER_GROUP_PREFIX,
+      OWNER_UNLINK_PREFIX,
+      OWNER_ARCHIVE_PREFIX,
+      OWNER_RESTORE_PREFIX,
+    ].find((prefix) => callback.data!.startsWith(prefix))
+    : undefined;
+  if (callback?.data && ownerPrefix) {
     const message = callback.message;
     if (!message || !isPrivate(message.chat)) {
       await answerCallbackQuery(callback.id, "Festivalbeheer werkt alleen in privé.");
       return true;
     }
-    const replacingMap = callback.data.startsWith(OWNER_MAP_PREFIX);
-    const selector = callback.data.slice((replacingMap ? OWNER_MAP_PREFIX : OWNER_SELECT_PREFIX).length);
+    const selector = callback.data.slice(ownerPrefix.length);
+    const ownerMessage = { ...message, from: callback.from };
     try {
+      if (ownerPrefix === OWNER_RESTORE_PREFIX) {
+        const festival = await restoreFestivalForOwner(callback.from.id, selector);
+        await answerCallbackQuery(callback.id, "Festival teruggezet.");
+        await sendMessage(message.chat.id, `↩️ ${festival.name} staat terug tussen je festivals.`);
+        await showOwnerFestival(ownerMessage, festival);
+        return true;
+      }
+      if (ownerPrefix === OWNER_UNLINK_CONFIRM_PREFIX) {
+        const result = await unlinkFestivalGroup(callback.from.id, selector);
+        await answerCallbackQuery(callback.id, "Groep ontkoppeld.");
+        await deactivateFestivalChat(result.previousChatId, result.festival.id);
+        await sendMessage(message.chat.id, [
+          `✅ De groep is ontkoppeld van ${result.festival.name}.`,
+          "De festivaldata is bewaard. Je kunt wanneer je wilt een andere groep koppelen.",
+        ].join("\n"));
+        await showOwnerFestival(ownerMessage, result.festival);
+        return true;
+      }
+      if (ownerPrefix === OWNER_ARCHIVE_CONFIRM_PREFIX) {
+        const result = await archiveFestivalForOwner(callback.from.id, selector);
+        await answerCallbackQuery(callback.id, "Festival gearchiveerd.");
+        if (result.previousChatId !== null) {
+          await deactivateFestivalChat(result.previousChatId, result.festival.id);
+        }
+        await sendMessage(message.chat.id, [
+          `📦 ${result.festival.name} ${result.festival.year} is gearchiveerd.`,
+          "Kaart, ankers, timetable en festivaldata blijven bewaard.",
+          "Terugzetten kan via /festival archief.",
+        ].join("\n"));
+        return true;
+      }
+
       const festival = await selectFestivalForOwner(callback.from.id, selector);
-      await answerCallbackQuery(callback.id, replacingMap ? "Stuur de nieuwe kaart hieronder." : "Festival geselecteerd.");
-      const ownerMessage = { ...message, from: callback.from };
-      if (replacingMap) await requestFestivalMap(ownerMessage, festival);
-      else await showOwnerFestival(ownerMessage, festival);
+      if (ownerPrefix === OWNER_MAP_PREFIX) {
+        await answerCallbackQuery(callback.id, "Stuur de nieuwe kaart hieronder.");
+        await requestFestivalMap(ownerMessage, festival);
+      } else if (ownerPrefix === OWNER_GROUP_PREFIX) {
+        await answerCallbackQuery(callback.id, "Kies de groep hieronder.");
+        await requestFestivalGroup(ownerMessage, festival);
+      } else if (ownerPrefix === OWNER_UNLINK_PREFIX) {
+        if (festival.chatId === null) throw new Error("Dit festival heeft geen gekoppelde groep.");
+        await answerCallbackQuery(callback.id, "Bevestig de ontkoppeling hieronder.");
+        await sendMessage(message.chat.id, [
+          `Groep “${festival.chatTitle ?? "festivalgroep"}” ontkoppelen van ${festival.name}?`,
+          "Ginder verlaat de groep. Je festivaldata blijft gewoon bewaard.",
+        ].join("\n"), {
+          reply_markup: { inline_keyboard: [[
+            { text: "Ja, ontkoppelen", callback_data: `${OWNER_UNLINK_CONFIRM_PREFIX}${festival.publicKey}` },
+            { text: "Nee", callback_data: `${OWNER_SELECT_PREFIX}${festival.publicKey}` },
+          ]] },
+        });
+      } else if (ownerPrefix === OWNER_ARCHIVE_PREFIX) {
+        await answerCallbackQuery(callback.id, "Bevestig het archiveren hieronder.");
+        await sendMessage(message.chat.id, [
+          `${festival.name} ${festival.year} archiveren?`,
+          "Ginder ontkoppelt en verlaat de groep. De festivaldata blijft bewaard en kan later worden teruggezet.",
+        ].join("\n"), {
+          reply_markup: { inline_keyboard: [[
+            { text: "Ja, archiveren", callback_data: `${OWNER_ARCHIVE_CONFIRM_PREFIX}${festival.publicKey}` },
+            { text: "Nee", callback_data: `${OWNER_SELECT_PREFIX}${festival.publicKey}` },
+          ]] },
+        });
+      } else {
+        await answerCallbackQuery(callback.id, "Festival geselecteerd.");
+        await showOwnerFestival(ownerMessage, festival);
+      }
     } catch (error) {
       await answerCallbackQuery(callback.id, error instanceof Error ? error.message : "Festival niet gevonden.");
     }
@@ -425,6 +606,7 @@ export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Prom
       await Promise.all([
         clearPendingFestival(message.from.id),
         clearFestivalMapUpload(message.from.id),
+        clearFestivalGroupLink(message.from.id),
       ]);
       await sendMessage(message.chat.id, "Festivalsetup geannuleerd.", { reply_markup: { remove_keyboard: true } });
       return true;
@@ -432,6 +614,11 @@ export async function routeFestivalLifecycleUpdate(update: TelegramUpdate): Prom
 
     if (["lijst", "list", "festivals"].includes(normalizedArgs)) {
       await showOwnedFestivals(message);
+      return true;
+    }
+
+    if (["archief", "archive", "archived"].includes(normalizedArgs)) {
+      await showArchivedFestivals(message);
       return true;
     }
 
