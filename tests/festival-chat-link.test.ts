@@ -4,6 +4,7 @@ const state = vi.hoisted(() => ({
   hashes: new Map<string, Map<string, unknown>>(),
   strings: new Map<string, unknown>(),
   sets: new Map<string, Set<string>>(),
+  failGroupLinkLockDelete: false,
 }));
 
 vi.mock("@/src/lib/storage", () => ({
@@ -14,11 +15,16 @@ vi.mock("@/src/lib/storage", () => ({
       state.hashes.set(key, hash);
       return Object.keys(values).length;
     };
-    const del = async (key: string) => Number([
-      state.strings.delete(key),
-      state.hashes.delete(key),
-      state.sets.delete(key),
-    ].some(Boolean));
+    const del = async (key: string) => {
+      if (state.failGroupLinkLockDelete && key.endsWith(":group-link-lock")) {
+        throw new Error("Redis unavailable");
+      }
+      return Number([
+        state.strings.delete(key),
+        state.hashes.delete(key),
+        state.sets.delete(key),
+      ].some(Boolean));
+    };
     const client = {
       get: async (key: string) => state.strings.get(key) ?? null,
       set: async (key: string, value: unknown, options?: { nx?: boolean }) => {
@@ -113,6 +119,7 @@ beforeEach(() => {
   state.hashes.clear();
   state.strings.clear();
   state.sets.clear();
+  state.failGroupLinkLockDelete = false;
 });
 
 describe("festival Telegram group isolation", () => {
@@ -193,6 +200,15 @@ describe("festival Telegram group isolation", () => {
     });
     expect(relinked.chatId).toBe(-1002);
     expect((await getFestivalForChat(-1002)).id).toBe(created.festival.id);
+
+    state.strings.set("ginder:user:42:group-link", {
+      ownerTelegramId: 42,
+      festivalId: created.festival.id,
+      requestId: request.requestId,
+    });
+    await expect(finishFestivalGroupLink(42, request.requestId, { id: -1003 }))
+      .rejects.toThrow("al aan een groep gekoppeld");
+    expect(state.strings.has("ginder:chat:-1003:festival")).toBe(false);
   });
 
   it("archives reversibly, disables public access and preserves festival data", async () => {
@@ -215,5 +231,22 @@ describe("festival Telegram group isolation", () => {
     expect(restored.archivedAt).toBeNull();
     expect(restored.mapImageUrl).toBe("https://ginder.test/new-map");
     expect((await getCurrentFestivalForOwner(42))?.id).toBe(restored.id);
+  });
+
+  it("keeps a successful group link successful when lock cleanup briefly fails", async () => {
+    const created = await finalizePendingFestival(pending(42, "horst-2027-a"), { id: -1001 });
+    await unlinkFestivalGroup(42, created.festival.publicKey);
+    const request = await beginFestivalGroupLink(42, created.festival.id);
+    state.failGroupLinkLockDelete = true;
+    const warning = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const relinked = await finishFestivalGroupLink(42, request.requestId, { id: -1002 });
+
+    expect(relinked.chatId).toBe(-1002);
+    expect(warning).toHaveBeenCalledWith(
+      "Ginder could not release festival group-link lock",
+      expect.any(Error),
+    );
+    warning.mockRestore();
   });
 });
