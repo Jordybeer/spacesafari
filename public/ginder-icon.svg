@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Ginder">
+  <rect width="512" height="512" fill="#f3efe5"/>
+  <path d="M256 112c-72.9 0-132 59.1-132 132 0 96 132 184 132 184s132-88 132-184c0-72.9-59.1-132-132-132Z" fill="none" stroke="#22201e" stroke-width="28" stroke-linejoin="round"/>
+  <circle cx="256" cy="244" r="30" fill="#22201e"/>
+</svg>
