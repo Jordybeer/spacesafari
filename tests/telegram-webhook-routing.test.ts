@@ -6,7 +6,7 @@ const mocks = vi.hoisted(() => ({
   group: vi.fn(async () => false),
   legacy: vi.fn(async () => undefined),
   currentFestival: vi.fn(async () => null),
-  recoverFestival: vi.fn(async () => ({ id: "space-safari-2026" })),
+  recoverFestival: vi.fn<() => Promise<{ id: string } | null>>(async () => ({ id: "space-safari-2026" })),
   syncCommands: vi.fn(async () => undefined),
   setMenuButton: vi.fn(async () => undefined),
   sendMessage: vi.fn(async () => ({})),
