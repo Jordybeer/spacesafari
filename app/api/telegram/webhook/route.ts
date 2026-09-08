@@ -23,9 +23,15 @@ async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
   const chat = updateChat(update);
   try {
     await syncTelegramCommandUi();
-    if (chat?.type === "private") await setCommandsMenuButton(chat.id);
   } catch (error) {
-    console.warn("Ginder could not normalize the Telegram command UI", error);
+    console.warn("Ginder could not sync Telegram command scopes", error);
+  }
+
+  if (chat?.type !== "private") return;
+  try {
+    await setCommandsMenuButton(chat.id);
+  } catch (error) {
+    console.warn("Ginder could not restore the private Telegram menu button", error);
   }
 }
 
