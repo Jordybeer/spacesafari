@@ -4,11 +4,29 @@ import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
 import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
-import type { TelegramUpdate } from "@/src/lib/telegram";
+import { setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
 import { timingSafeSecretEqual } from "@/src/lib/webhook-security";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+function updateChat(update: TelegramUpdate): TelegramChat | undefined {
+  return update.message?.chat ?? update.callback_query?.message?.chat;
+}
+
+function isGroupChat(chat: TelegramChat | undefined): boolean {
+  return chat?.type === "group" || chat?.type === "supergroup";
+}
+
+async function normalizePrivateChatUi(update: TelegramUpdate): Promise<void> {
+  const chat = updateChat(update);
+  if (chat?.type !== "private") return;
+  try {
+    await setCommandsMenuButton(chat.id);
+  } catch (error) {
+    console.warn("Ginder could not normalize the private Telegram menu button", error);
+  }
+}
 
 async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void> {
   const message = update.message;
@@ -49,12 +67,18 @@ export async function POST(request: Request) {
   }
 
   try {
+    await normalizePrivateChatUi(update);
+
     const setupHandled = await routeFestivalBotSetupUpdate(update);
     if (!setupHandled) {
       const lifecycleHandled = await routeFestivalLifecycleUpdate(update);
       if (lifecycleHandled) {
         await continueFreshFestivalSetup(update);
-      } else if (!(await routeGroupCompanionUpdate(update))) {
+      } else if (isGroupChat(updateChat(update))) {
+        if (!(await routeGroupCompanionUpdate(update))) {
+          await routeTelegramUpdate(update);
+        }
+      } else if (updateChat(update)?.type !== "private") {
         await routeTelegramUpdate(update);
       }
     }
