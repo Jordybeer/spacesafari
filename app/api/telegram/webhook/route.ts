@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { routeTelegramUpdate } from "@/src/lib/bot-router";
 import { routeFestivalBotSetupUpdate } from "@/src/lib/festival-bot-setup-router";
 import { routeFestivalLifecycleUpdate } from "@/src/lib/festival-bot-router";
-import { getCurrentFestivalForOwner } from "@/src/lib/festival-store";
+import { getCurrentFestivalForOwner, getFestivalForChat } from "@/src/lib/festival-store";
+import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 import { routeGroupCompanionUpdate } from "@/src/lib/group-companion-router";
 import { syncTelegramCommandUi } from "@/src/lib/telegram-command-ui";
 import { setCommandsMenuButton, type TelegramChat, type TelegramUpdate } from "@/src/lib/telegram";
@@ -17,6 +18,23 @@ function updateChat(update: TelegramUpdate): TelegramChat | undefined {
 
 function isGroupChat(chat: TelegramChat | undefined): boolean {
   return chat?.type === "group" || chat?.type === "supergroup";
+}
+
+function couldNeedLegacyGroupRouter(update: TelegramUpdate): boolean {
+  const text = update.message?.text?.trim() ?? "";
+  const callbackData = update.callback_query?.data ?? "";
+  return text.startsWith("/") || /^(?:p|m):/.test(callbackData);
+}
+
+async function shouldUseLegacyGroupRouter(update: TelegramUpdate, chat: TelegramChat): Promise<boolean> {
+  if (!couldNeedLegacyGroupRouter(update)) return false;
+  try {
+    const festival = await getFestivalForChat(chat.id);
+    return festival.id === DEFAULT_FESTIVAL_ID;
+  } catch (error) {
+    console.warn("Ginder could not resolve legacy group fallback", error);
+    return false;
+  }
 }
 
 async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
@@ -81,12 +99,15 @@ export async function POST(request: Request) {
       const lifecycleHandled = await routeFestivalLifecycleUpdate(update);
       if (lifecycleHandled) {
         await continueFreshFestivalSetup(update);
-      } else if (isGroupChat(updateChat(update))) {
-        if (!(await routeGroupCompanionUpdate(update))) {
+      } else {
+        const chat = updateChat(update);
+        if (isGroupChat(chat)) {
+          if (!(await routeGroupCompanionUpdate(update)) && chat && await shouldUseLegacyGroupRouter(update, chat)) {
+            await routeTelegramUpdate(update);
+          }
+        } else if (chat?.type !== "private") {
           await routeTelegramUpdate(update);
         }
-      } else if (updateChat(update)?.type !== "private") {
-        await routeTelegramUpdate(update);
       }
     }
     return NextResponse.json({ ok: true });
