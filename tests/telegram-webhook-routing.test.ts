@@ -6,21 +6,23 @@ const mocks = vi.hoisted(() => ({
   group: vi.fn(async () => false),
   legacy: vi.fn(async () => undefined),
   currentFestival: vi.fn(async () => null),
-  festivalForChat: vi.fn(async () => ({ id: "space-safari-2026" })),
+  recoverFestival: vi.fn(async () => ({ id: "space-safari-2026" })),
   syncCommands: vi.fn(async () => undefined),
   setMenuButton: vi.fn(async () => undefined),
+  sendMessage: vi.fn(async () => ({})),
 }));
 
 vi.mock("@/src/lib/bot-router", () => ({ routeTelegramUpdate: mocks.legacy }));
 vi.mock("@/src/lib/festival-bot-setup-router", () => ({ routeFestivalBotSetupUpdate: mocks.setup }));
 vi.mock("@/src/lib/festival-bot-router", () => ({ routeFestivalLifecycleUpdate: mocks.lifecycle }));
-vi.mock("@/src/lib/festival-store", () => ({
-  getCurrentFestivalForOwner: mocks.currentFestival,
-  getFestivalForChat: mocks.festivalForChat,
-}));
+vi.mock("@/src/lib/festival-chat-recovery", () => ({ recoverFestivalForChat: mocks.recoverFestival }));
+vi.mock("@/src/lib/festival-store", () => ({ getCurrentFestivalForOwner: mocks.currentFestival }));
 vi.mock("@/src/lib/group-companion-router", () => ({ routeGroupCompanionUpdate: mocks.group }));
 vi.mock("@/src/lib/telegram-command-ui", () => ({ syncTelegramCommandUi: mocks.syncCommands }));
-vi.mock("@/src/lib/telegram", () => ({ setCommandsMenuButton: mocks.setMenuButton }));
+vi.mock("@/src/lib/telegram", () => ({
+  setCommandsMenuButton: mocks.setMenuButton,
+  sendMessage: mocks.sendMessage,
+}));
 
 import { POST } from "@/app/api/telegram/webhook/route";
 
@@ -41,7 +43,7 @@ beforeEach(() => {
   mocks.setup.mockResolvedValue(false);
   mocks.lifecycle.mockResolvedValue(false);
   mocks.group.mockResolvedValue(false);
-  mocks.festivalForChat.mockResolvedValue({ id: "space-safari-2026" });
+  mocks.recoverFestival.mockResolvedValue({ id: "space-safari-2026" });
 });
 
 afterEach(() => {
@@ -65,6 +67,7 @@ describe("Telegram webhook routing", () => {
     expect(mocks.setMenuButton).toHaveBeenCalledWith(42);
     expect(mocks.setup).toHaveBeenCalledOnce();
     expect(mocks.lifecycle).toHaveBeenCalledOnce();
+    expect(mocks.recoverFestival).not.toHaveBeenCalled();
     expect(mocks.group).not.toHaveBeenCalled();
     expect(mocks.legacy).not.toHaveBeenCalled();
   });
@@ -83,14 +86,13 @@ describe("Telegram webhook routing", () => {
     }));
 
     expect(response.status).toBe(200);
-    expect(mocks.syncCommands).toHaveBeenCalledOnce();
-    expect(mocks.setMenuButton).not.toHaveBeenCalled();
+    expect(mocks.recoverFestival).toHaveBeenCalledWith(-100123);
     expect(mocks.group).toHaveBeenCalledOnce();
     expect(mocks.legacy).not.toHaveBeenCalled();
   });
 
   it("does not leak legacy Space Safari command handling into custom festival groups", async () => {
-    mocks.festivalForChat.mockResolvedValue({ id: "horst-2027-abcd" });
+    mocks.recoverFestival.mockResolvedValue({ id: "horst-2027-abcd" });
 
     const response = await POST(webhookRequest({
       update_id: 3,
@@ -98,29 +100,64 @@ describe("Telegram webhook routing", () => {
         message_id: 4,
         from: { id: 42, first_name: "Jordy" },
         chat: { id: -100123, type: "supergroup", title: "Horst crew" },
-        text: "/id",
+        text: "/unknown",
       },
     }));
 
     expect(response.status).toBe(200);
     expect(mocks.group).toHaveBeenCalledOnce();
-    expect(mocks.festivalForChat).toHaveBeenCalledWith(-100123);
     expect(mocks.legacy).not.toHaveBeenCalled();
   });
 
-  it("retains the legacy router only for the built-in Space Safari group", async () => {
+  it("retains the legacy router for the built-in Space Safari group", async () => {
     const response = await POST(webhookRequest({
       update_id: 4,
       message: {
         message_id: 5,
         from: { id: 42, first_name: "Jordy" },
         chat: { id: -100456, type: "group", title: "Space Safari crew" },
-        text: "/wie",
+        text: "/unknown",
       },
     }));
 
     expect(response.status).toBe(200);
-    expect(mocks.festivalForChat).toHaveBeenCalledWith(-100456);
+    expect(mocks.recoverFestival).toHaveBeenCalledWith(-100456);
     expect(mocks.legacy).toHaveBeenCalledOnce();
+  });
+
+  it("keeps /id available in groups without depending on festival linkage", async () => {
+    const response = await POST(webhookRequest({
+      update_id: 5,
+      message: {
+        message_id: 6,
+        from: { id: 1303637520, first_name: "Jordy" },
+        chat: { id: -100789, type: "group", title: "Voodoo Village" },
+        text: "/id",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.legacy).toHaveBeenCalledOnce();
+    expect(mocks.recoverFestival).not.toHaveBeenCalled();
+    expect(mocks.group).not.toHaveBeenCalled();
+  });
+
+  it("answers instead of 500 when a group has an unrecoverable stale festival link", async () => {
+    mocks.recoverFestival.mockResolvedValue(null);
+
+    const response = await POST(webhookRequest({
+      update_id: 6,
+      message: {
+        message_id: 7,
+        from: { id: 42, first_name: "Jordy" },
+        chat: { id: -100999, type: "supergroup", title: "Broken crew" },
+        text: "/map",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.group).not.toHaveBeenCalled();
+    expect(mocks.legacy).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).toHaveBeenCalledWith(-100999, expect.stringContaining("geen geldige Ginder-koppeling"));
   });
 });
