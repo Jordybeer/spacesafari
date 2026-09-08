@@ -168,6 +168,9 @@ describe("festival onboarding privacy", () => {
       ...created,
       ...patch,
     }));
+    vi.spyOn(festivalStore, "clearPendingFestival").mockResolvedValue(undefined);
+    vi.spyOn(festivalStore, "clearFestivalNamePrompt").mockResolvedValue(undefined);
+    vi.spyOn(festivalStore, "clearFestivalGroupLink").mockResolvedValue(undefined);
     const beginMap = vi.spyOn(festivalStore, "beginFestivalMapUpload").mockResolvedValue(created);
 
     await routeFestivalLifecycleUpdate({
