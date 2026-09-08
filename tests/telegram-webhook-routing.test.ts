@@ -160,4 +160,25 @@ describe("Telegram webhook routing", () => {
     expect(mocks.legacy).not.toHaveBeenCalled();
     expect(mocks.sendMessage).toHaveBeenCalledWith(-100999, expect.stringContaining("geen geldige Ginder-koppeling"));
   });
+
+  it("swallows a stale-link error raised inside group companion routing and answers the group", async () => {
+    mocks.recoverFestival.mockResolvedValue({ id: "voodoo-2026-abcd" });
+    mocks.group.mockRejectedValue(new Error("Festivalkoppeling is ongeldig."));
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    const response = await POST(webhookRequest({
+      update_id: 7,
+      message: {
+        message_id: 8,
+        from: { id: 1303637520, first_name: "Jordy" },
+        chat: { id: -100777, type: "supergroup", title: "Voodoo Village" },
+        text: "/mapadmin",
+      },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(mocks.group).toHaveBeenCalledOnce();
+    expect(mocks.legacy).not.toHaveBeenCalled();
+    expect(mocks.sendMessage).toHaveBeenCalledWith(-100777, expect.stringContaining("geen geldige Ginder-koppeling"));
+  });
 });
