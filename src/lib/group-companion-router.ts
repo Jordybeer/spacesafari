@@ -468,6 +468,18 @@ async function handleMenuCallback(action: string, chat: TelegramChat, user: Tele
 
 export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise<boolean> {
   const callback = update.callback_query;
+  if (
+    callback?.message
+    && isGroupChat(callback.message.chat)
+    && callback.data
+    && /^(?:p|m):/.test(callback.data)
+  ) {
+    const festival = await getFestivalForChat(callback.message.chat.id);
+    if (festival.id !== DEFAULT_FESTIVAL_ID) {
+      await answerCallbackQuery(callback.id, "Deze oude knop hoort bij een ander festival.");
+      return true;
+    }
+  }
   if (callback?.message && callback.data?.startsWith(PING_PREFIX)) {
     await handleCustomPingCallback(callback.id, callback.message.chat, callback.data.slice(PING_PREFIX.length));
     return true;
@@ -522,6 +534,17 @@ export async function routeGroupCompanionUpdate(update: TelegramUpdate): Promise
   if (command === "/map" || raw === "🗺 Kaart") {
     await sendMapLink(message.chat);
     return true;
+  }
+
+  if (command === "/mapadmin" && isGroupChat(message.chat)) {
+    const festival = await getFestivalForChat(message.chat.id);
+    if (festival.id !== DEFAULT_FESTIVAL_ID) {
+      await sendMessage(
+        message.chat.id,
+        `⚙️ Beheer de kaart van ${festival.name} via /festival in een privégesprek met Ginder.`,
+      );
+      return true;
+    }
   }
 
   if (isGroupChat(message.chat) && ["/wie", "/straks", "/programma", "/ping", "/pings", "/unping"].includes(command)) {
