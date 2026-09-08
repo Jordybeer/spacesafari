@@ -43,11 +43,13 @@ function parseFestivalNameAndYear(value: string): { name: string; year: number }
   return { name: name.slice(0, 80), year };
 }
 
-function cooldownText(seconds: number): string {
+export function cooldownText(seconds: number): string {
   const hours = Math.max(1, Math.ceil(seconds / 3600));
   if (hours < 24) return `${hours} uur`;
-  const days = Math.ceil(hours / 24);
-  return `${days} dag${days === 1 ? "" : "en"}`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = hours % 24;
+  const dayText = `${days} dag${days === 1 ? "" : "en"}`;
+  return remainingHours ? `${dayText} en ${remainingHours} uur` : dayText;
 }
 
 function statusText(festival: PersistedFestival): string {
@@ -130,7 +132,7 @@ async function showCurrentFestival(message: TelegramMessage): Promise<boolean> {
   if (festival.inviteLink) rows.push([{ text: "👥 Open festivalgroep", url: festival.inviteLink }]);
 
   const newFestivalLine = cooldown > 0
-    ? `Nieuw festival: nog ongeveer ${cooldownText(cooldown)} wachten.`
+    ? `Je kunt over ${cooldownText(cooldown)} weer een nieuw festival aanmaken.`
     : "Nog eentje maken? /festival nieuw <naam> <jaar>";
 
   await sendMessage(message.chat.id, [
@@ -159,7 +161,10 @@ async function startFestivalCreation(message: TelegramMessage, rawName: string):
 
   const cooldown = await getCreationCooldownSeconds(userId);
   if (cooldown > 0) {
-    await sendMessage(message.chat.id, `Je kunt één nieuw festival per 7 dagen aanmaken. Nog ongeveer ${cooldownText(cooldown)} wachten.`);
+    await sendMessage(
+      message.chat.id,
+      `Je hebt deze week al een festival aangemaakt. Je kunt over ${cooldownText(cooldown)} weer een nieuwe aanmaken.`,
+    );
     return;
   }
 
@@ -229,7 +234,7 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
   if (!(await claimCreationSlot(userId))) {
     await clearPendingFestival(userId);
     const cooldown = await getCreationCooldownSeconds(userId);
-    await sendMessage(message.chat.id, `Je 7-dagenlimiet is intussen actief. Nog ongeveer ${cooldownText(cooldown)} wachten.`, {
+    await sendMessage(message.chat.id, `Je 7-dagenlimiet is intussen actief. Je kunt over ${cooldownText(cooldown)} weer een nieuwe aanmaken.`, {
       reply_markup: { remove_keyboard: true },
     });
     return;
