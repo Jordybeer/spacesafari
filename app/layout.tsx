@@ -9,7 +9,13 @@ export const metadata: Metadata = {
   description: "Festivalkaart, timetable en opt-in live groepslocaties.",
   applicationName: "Ginder",
   manifest: "/manifest.webmanifest",
-  icons: { icon: "/festival-map.jpg" },
+  icons: {
+    icon: [
+      { url: "/ginder-icon.svg", type: "image/svg+xml" },
+      { url: "/ginder-icon-192.png", sizes: "192x192", type: "image/png" },
+    ],
+    apple: [{ url: "/ginder-icon-180.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
