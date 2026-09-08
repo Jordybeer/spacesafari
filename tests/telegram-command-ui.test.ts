@@ -11,6 +11,7 @@ vi.mock("@/src/lib/telegram", () => ({
 }));
 
 import {
+  GROUP_ADMIN_BOT_COMMANDS,
   GROUP_BOT_COMMANDS,
   PRIVATE_BOT_COMMANDS,
   syncTelegramCommandUi,
@@ -31,10 +32,13 @@ describe("Telegram command UI", () => {
     expect(PRIVATE_BOT_COMMANDS.some(({ command }) => ["map", "live", "meet", "tent"].includes(command))).toBe(false);
     expect(GROUP_BOT_COMMANDS.some(({ command }) => command === "festival")).toBe(false);
     expect(GROUP_BOT_COMMANDS.some(({ command }) => command === "map")).toBe(true);
+    expect(GROUP_BOT_COMMANDS.some(({ command }) => command === "id")).toBe(true);
+    expect(GROUP_ADMIN_BOT_COMMANDS.at(-1)?.command).toBe("mapadmin");
 
     expect(telegram.setBotCommands).toHaveBeenNthCalledWith(1, PRIVATE_BOT_COMMANDS);
     expect(telegram.setBotCommands).toHaveBeenNthCalledWith(2, PRIVATE_BOT_COMMANDS, { type: "all_private_chats" });
     expect(telegram.setBotCommands).toHaveBeenNthCalledWith(3, GROUP_BOT_COMMANDS, { type: "all_group_chats" });
+    expect(telegram.setBotCommands).toHaveBeenNthCalledWith(4, GROUP_ADMIN_BOT_COMMANDS, { type: "all_chat_administrators" });
     expect(telegram.setCommandsMenuButton).toHaveBeenCalledWith();
   });
 });
