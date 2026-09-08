@@ -27,6 +27,12 @@ function commandFromUpdate(update: TelegramUpdate): string {
   return raw.split("@")[0].toLowerCase();
 }
 
+function isStaleFestivalLinkError(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message === "Festivalkoppeling is ongeldig."
+    || error.message === "Deze Telegram-groep is niet meer gekoppeld aan een festival.";
+}
+
 async function normalizeTelegramUi(update: TelegramUpdate): Promise<void> {
   const chat = updateChat(update);
   try {
@@ -62,6 +68,13 @@ async function continueFreshFestivalSetup(update: TelegramUpdate): Promise<void>
   });
 }
 
+async function sendStaleGroupLinkMessage(chatId: number): Promise<void> {
+  await sendMessage(chatId, [
+    "Deze groep heeft geen geldige Ginder-koppeling meer.",
+    "De festivalmaker kan in privé /festival openen en de groep opnieuw koppelen.",
+  ].join("\n"));
+}
+
 async function routeGroupUpdate(update: TelegramUpdate, chat: TelegramChat): Promise<void> {
   if (commandFromUpdate(update) === "/id") {
     await routeTelegramUpdate(update);
@@ -70,14 +83,19 @@ async function routeGroupUpdate(update: TelegramUpdate, chat: TelegramChat): Pro
 
   const festival = await recoverFestivalForChat(chat.id);
   if (!festival) {
-    await sendMessage(chat.id, [
-      "Deze groep heeft geen geldige Ginder-koppeling meer.",
-      "De festivalmaker kan in privé /festival openen en de groep opnieuw koppelen.",
-    ].join("\n"));
+    await sendStaleGroupLinkMessage(chat.id);
     return;
   }
 
-  if (await routeGroupCompanionUpdate(update)) return;
+  try {
+    if (await routeGroupCompanionUpdate(update)) return;
+  } catch (error) {
+    if (!isStaleFestivalLinkError(error)) throw error;
+    console.warn("Ginder blocked a stale festival group link", { chatId: chat.id, festivalId: festival.id });
+    await sendStaleGroupLinkMessage(chat.id);
+    return;
+  }
+
   if (festival.id === DEFAULT_FESTIVAL_ID) {
     await routeTelegramUpdate(update);
   }
