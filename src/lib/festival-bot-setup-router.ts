@@ -242,19 +242,17 @@ async function requestMap(message: TelegramMessage, festival: PersistedFestival)
   await clearPrompt(message.from!.id);
   await beginFestivalMapUpload(message.from!.id, festival.id);
   await sendMessage(message.chat.id, [
-    `Stuur nu de ${festival.mapImageUrl ? "nieuwe " : ""}festivalkaart voor ${festival.name}.`,
+    "1/4 · Festivalkaart",
+    "",
+    `Stuur nu de ${festival.mapImageUrl ? "nieuwe " : "officiële "}festivalkaart voor ${festival.name} hier in deze privéchat.`,
+    "Tik op + (of de paperclip) → Foto of Bestand → kies de afbeelding → verstuur.",
     festival.mapImageUrl
       ? "De oude ankers worden pas verwijderd zodra de nieuwe afbeelding echt ontvangen is."
-      : "Foto of afbeeldingsbestand is goed; gebruik liefst de hoogste resolutie.",
+      : "Liefst het originele bestand of de hoogste resolutie die je hebt.",
+    "",
+    "Annuleren: /festival cancel",
   ].join("\n"), {
-    reply_markup: {
-      inline_keyboard: [[{
-        text: "Annuleren",
-        callback_data: `${CANCEL_CALLBACK_PREFIX}${festival.publicKey}`,
-        style: "danger",
-      }]],
-      force_reply: true,
-    },
+    reply_markup: { remove_keyboard: true },
   });
 }
 
@@ -264,13 +262,18 @@ async function maybeStoreFestivalMap(message: TelegramMessage): Promise<boolean>
   const largestPhoto = photos.length
     ? [...photos].sort((a, b) => b.width * b.height - a.width * a.height)[0]
     : null;
-  const imageDocument = message.document?.mime_type?.startsWith("image/") ? message.document : null;
+  const document = message.document;
+  const fileName = document?.file_name?.toLowerCase() ?? "";
+  const imageDocument = document && (
+    document.mime_type?.startsWith("image/")
+    || /\.(?:png|jpe?g|webp|heic|heif)$/i.test(fileName)
+  ) ? document : null;
   const fileId = imageDocument?.file_id ?? largestPhoto?.file_id;
   if (!fileId) return false;
 
   const current = await getCurrentFestivalForOwner(message.from.id);
   const awaiting = await getFestivalAwaitingMapUpload(message.from.id);
-  const festival = awaiting ?? (current?.status === "map" ? current : null);
+  const festival = awaiting ?? (current && !current.mapImageUrl ? current : null);
   if (!festival) return false;
   const appUrl = process.env.APP_URL?.replace(/\/$/, "");
   if (!appUrl) throw new Error("APP_URL is not configured");
