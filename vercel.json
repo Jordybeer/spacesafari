@@ -3,7 +3,8 @@
   "git": {
     "deploymentEnabled": {
       "**": false,
-      "main": true
+      "main": true,
+      "experiment/whatsapp-integration": true
     }
   },
   "functions": {
