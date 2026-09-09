@@ -48,14 +48,31 @@ function leaveOneOutErrors(anchors: CalibrationAnchor[]): number[] {
   });
 }
 
+/**
+ * With exactly four anchors, a leave-one-out affine fit uses only three points and
+ * cannot reliably identify which one is wrong: every omitted point can look like
+ * the culprit. Only name a likely outlier once five or more anchors provide enough
+ * redundancy. Four-point disagreement is still surfaced as a weak calibration.
+ */
+function likelyOutlierIndex(anchors: CalibrationAnchor[], crossChecks: number[]): number | null {
+  if (anchors.length < 5 || crossChecks.length !== anchors.length) return null;
+  const ranked = crossChecks
+    .map((error, index) => ({ error, index }))
+    .filter((item) => Number.isFinite(item.error))
+    .sort((a, b) => b.error - a.error);
+  if (ranked.length < 2) return null;
+  const [worst, second] = ranked;
+  if (worst.error <= 0.07) return null;
+  if (worst.error < second.error * 1.35) return null;
+  return worst.index;
+}
+
 export function assessCalibrationQuality(anchors: CalibrationAnchor[]): CalibrationQuality {
   const anchorCount = anchors.length;
   const spread = spreadFor(anchors);
   const crossChecks = leaveOneOutErrors(anchors);
   const worstCrossCheckError = crossChecks.length ? Math.max(...crossChecks) : null;
-  const outlierIndex = crossChecks.length && Number.isFinite(worstCrossCheckError)
-    ? crossChecks.findIndex((error) => error === worstCrossCheckError && error > 0.07)
-    : null;
+  const outlierIndex = likelyOutlierIndex(anchors, crossChecks);
 
   if (anchorCount < 2) {
     return {
@@ -79,6 +96,7 @@ export function assessCalibrationQuality(anchors: CalibrationAnchor[]): Calibrat
   const score = Math.round(100 * (countScore * 0.35 + spreadScore * 0.35 + crossCheckScore * 0.3));
 
   if (outlierIndex !== null || (worstCrossCheckError !== null && worstCrossCheckError > 0.1)) {
+    const canNameOutlier = outlierIndex !== null;
     return {
       level: "weak",
       score: Math.min(score, 49),
@@ -87,8 +105,10 @@ export function assessCalibrationQuality(anchors: CalibrationAnchor[]): Calibrat
       spreadY: spread.y,
       worstCrossCheckError,
       outlierIndex,
-      summary: "Een kalibratiepunt wijkt sterk af",
-      nextAction: "Controleer het gemarkeerde punt vóór publicatie.",
+      summary: canNameOutlier ? "Een kalibratiepunt wijkt waarschijnlijk sterk af" : "Kalibratiepunten spreken elkaar tegen",
+      nextAction: canNameOutlier
+        ? "Controleer het gemarkeerde punt vóór publicatie."
+        : "Controleer de punten afzonderlijk of voeg een extra onafhankelijk punt toe.",
     };
   }
 
@@ -106,7 +126,7 @@ export function assessCalibrationQuality(anchors: CalibrationAnchor[]): Calibrat
     };
   }
 
-  if (anchorCount >= 4 && spread.x >= 0.45 && spread.y >= 0.45 && (worstCrossCheckError === null || worstCrossCheckError <= 0.05)) {
+  if (anchorCount >= 4 && spread.x >= 0.45 && spread.y >= 0.45 && (worstCrossCheckError === null || worstCrossCheckError <= 0.06)) {
     return {
       level: "good",
       score: Math.max(score, 80),
