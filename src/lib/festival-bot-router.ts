@@ -363,9 +363,9 @@ export async function onboardingMessages(festival: PersistedFestival): Promise<v
   const mapUrl = mapMiniAppUrl(festivalMapStartParam(festival, roomToken));
 
   await sendMessage(festival.chatId, [
-    `👋 Welkom bij Ginder voor ${festival.name} ${festival.year}.`,
+    `✅ ${festival.name} ${festival.year} is gekoppeld aan Ginder.`,
     "",
-    "Deze groep is nu gekoppeld. De maker beheert de festivalsetup privé; Ginder gebruikt hier alleen de rechten die nodig zijn voor de festivaltools.",
+    "De festivalsetup gebeurt privé bij de maker. Deze groep is voor de festivaltools zodra de setup klaar is.",
   ].join("\n"));
 
   const setupText = festival.status === "ready"
@@ -374,8 +374,16 @@ export async function onboardingMessages(festival: PersistedFestival): Promise<v
       "/menu voor alle festivaltools · /map voor de kaart.",
     ]
     : [
-      "🛠 Setup is bezig.",
-      "De maker krijgt de stappen privé in Ginder. Zodra de setup klaar is, kunnen jullie hier /map en /menu gebruiken.",
+      "🛠 Setup nog afwerken",
+      "",
+      "De maker krijgt nu in privé automatisch de volgende stap:",
+      "1. Festivalkaart sturen",
+      "2. Terreinlocatie + grootte",
+      "3. 2–6 ankers plaatsen",
+      "4. Timetable sturen",
+      "",
+      "Ginder gaat na elke stap automatisch verder.",
+      "Daarna werken /map en /menu hier in de groep.",
     ];
   await sendMessage(
     festival.chatId,
@@ -397,10 +405,18 @@ async function continueIncompleteFestivalSetup(message: TelegramMessage, festiva
     return;
   }
   if (festival.status === "ready") return;
-  await sendMessage(message.chat.id, "De festivalsetup is nog niet klaar. Ga verder waar je gebleven was.", {
+  const nextStep = festival.status === "timetable"
+    ? "4/4 · Timetable"
+    : festival.status === "anchors"
+      ? "3/4 · Ankers"
+      : "2/4 · Terrein";
+  await sendMessage(message.chat.id, [
+    `We gaan verder met ${festival.name}.`,
+    `Volgende stap: ${nextStep}`,
+  ].join("\n"), {
     reply_markup: {
       inline_keyboard: [[{
-        text: "▶️ Setup verder",
+        text: "▶️ Open volgende stap",
         callback_data: botSetupCallback(festival),
         style: "primary",
       }]],
@@ -428,7 +444,10 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
         console.warn("Ginder could not create Telegram invite link", error);
       }
       await onboardingMessages(linkedFestival);
-      await sendMessage(message.chat.id, `✅ ${linkedFestival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
+      await sendMessage(message.chat.id, [
+        `✅ ${linkedFestival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`,
+        "Ik neem je nu verder door de resterende setup.",
+      ].join("\n"), {
         reply_markup: { remove_keyboard: true },
       });
       await continueIncompleteFestivalSetup(message, linkedFestival);
@@ -476,7 +495,10 @@ async function finishGroupLink(message: TelegramMessage): Promise<void> {
     }
 
     await onboardingMessages(festival);
-    await sendMessage(message.chat.id, `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`, {
+    await sendMessage(message.chat.id, [
+      `✅ ${festival.name} is gekoppeld aan ${shared.title ?? "je festivalgroep"}.`,
+      "Ik neem je nu stap voor stap door de setup.",
+    ].join("\n"), {
       reply_markup: { remove_keyboard: true },
     });
     await requestFestivalMap(message, festival);
