@@ -93,7 +93,7 @@ describe("festival onboarding privacy", () => {
     expect(groupPayload).not.toContain("festival-setup");
     expect(groupPayload).not.toContain("Festival instellen");
     expect(groupPayload).not.toContain("Open kaart");
-    expect(groupPayload).toContain("maker krijgt de stappen privé");
+    expect(groupPayload).toContain("festivalsetup gebeurt privé bij de maker");
   });
 
   it("keeps every /festival subcommand out of Telegram groups", async () => {
