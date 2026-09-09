@@ -1,0 +1,245 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-09T06:45:10Z",
+  "title": "Design System: Ginder",
+  "extensions": {
+    "colorMeta": {
+      "field-paper": {
+        "role": "neutral",
+        "displayName": "Field Paper",
+        "canonical": "#f3efe5",
+        "tonalRamp": ["oklch(15% 0.014 88.7)", "oklch(26% 0.014 88.7)", "oklch(38% 0.014 88.7)", "oklch(50% 0.014 88.7)", "oklch(62% 0.014 88.7)", "oklch(74% 0.014 88.7)", "oklch(86% 0.014 88.7)", "oklch(95% 0.014 88.7)"]
+      },
+      "field-ink": {
+        "role": "neutral",
+        "displayName": "Field Ink",
+        "canonical": "#22201e",
+        "tonalRamp": ["oklch(15% 0.005 67.6)", "oklch(26% 0.005 67.6)", "oklch(38% 0.005 67.6)", "oklch(50% 0.005 67.6)", "oklch(62% 0.005 67.6)", "oklch(74% 0.005 67.6)", "oklch(86% 0.005 67.6)", "oklch(95% 0.005 67.6)"]
+      },
+      "field-muted": {
+        "role": "neutral",
+        "displayName": "Field Muted",
+        "canonical": "#6e6861",
+        "tonalRamp": ["oklch(15% 0.013 71.8)", "oklch(26% 0.013 71.8)", "oklch(38% 0.013 71.8)", "oklch(50% 0.013 71.8)", "oklch(62% 0.013 71.8)", "oklch(74% 0.013 71.8)", "oklch(86% 0.013 71.8)", "oklch(95% 0.013 71.8)"]
+      },
+      "field-line": {
+        "role": "neutral",
+        "displayName": "Field Line",
+        "canonical": "#cbc4b9",
+        "tonalRamp": ["oklch(15% 0.017 79.3)", "oklch(26% 0.017 79.3)", "oklch(38% 0.017 79.3)", "oklch(50% 0.017 79.3)", "oklch(62% 0.017 79.3)", "oklch(74% 0.017 79.3)", "oklch(86% 0.017 79.3)", "oklch(95% 0.017 79.3)"]
+      },
+      "night-aubergine": {
+        "role": "neutral",
+        "displayName": "Night Aubergine",
+        "canonical": "#211120",
+        "tonalRamp": ["oklch(15% 0.038 329.0)", "oklch(26% 0.038 329.0)", "oklch(38% 0.038 329.0)", "oklch(50% 0.038 329.0)", "oklch(62% 0.038 329.0)", "oklch(74% 0.038 329.0)", "oklch(86% 0.038 329.0)", "oklch(95% 0.038 329.0)"]
+      },
+      "night-map": {
+        "role": "neutral",
+        "displayName": "Night Map",
+        "canonical": "#251225",
+        "tonalRamp": ["oklch(15% 0.045 327.0)", "oklch(26% 0.045 327.0)", "oklch(38% 0.045 327.0)", "oklch(50% 0.045 327.0)", "oklch(62% 0.045 327.0)", "oklch(74% 0.045 327.0)", "oklch(86% 0.045 327.0)", "oklch(95% 0.045 327.0)"]
+      },
+      "panel-plum": {
+        "role": "neutral",
+        "displayName": "Plum Panel",
+        "canonical": "#351829",
+        "tonalRamp": ["oklch(15% 0.053 345.3)", "oklch(26% 0.053 345.3)", "oklch(38% 0.053 345.3)", "oklch(50% 0.053 345.3)", "oklch(62% 0.053 345.3)", "oklch(74% 0.053 345.3)", "oklch(86% 0.053 345.3)", "oklch(95% 0.053 345.3)"]
+      },
+      "panel-form": {
+        "role": "neutral",
+        "displayName": "Form Plum",
+        "canonical": "#2a1529",
+        "tonalRamp": ["oklch(15% 0.048 328.7)", "oklch(26% 0.048 328.7)", "oklch(38% 0.048 328.7)", "oklch(50% 0.048 328.7)", "oklch(62% 0.048 328.7)", "oklch(74% 0.048 328.7)", "oklch(86% 0.048 328.7)", "oklch(95% 0.048 328.7)"]
+      },
+      "cream": {
+        "role": "neutral",
+        "displayName": "Cream",
+        "canonical": "#f8e8d1",
+        "tonalRamp": ["oklch(15% 0.035 77.1)", "oklch(26% 0.035 77.1)", "oklch(38% 0.035 77.1)", "oklch(50% 0.035 77.1)", "oklch(62% 0.035 77.1)", "oklch(74% 0.035 77.1)", "oklch(86% 0.035 77.1)", "oklch(95% 0.035 77.1)"]
+      },
+      "cream-dim": {
+        "role": "neutral",
+        "displayName": "Dim Cream",
+        "canonical": "#e5cdb6",
+        "tonalRamp": ["oklch(15% 0.041 66.0)", "oklch(26% 0.041 66.0)", "oklch(38% 0.041 66.0)", "oklch(50% 0.041 66.0)", "oklch(62% 0.041 66.0)", "oklch(74% 0.041 66.0)", "oklch(86% 0.041 66.0)", "oklch(95% 0.041 66.0)"]
+      },
+      "campfire-orange": {
+        "role": "primary",
+        "displayName": "Campfire Orange",
+        "canonical": "#f36b17",
+        "tonalRamp": ["oklch(15% 0.187 45.5)", "oklch(26% 0.187 45.5)", "oklch(38% 0.187 45.5)", "oklch(50% 0.187 45.5)", "oklch(62% 0.187 45.5)", "oklch(74% 0.187 45.5)", "oklch(86% 0.187 45.5)", "oklch(95% 0.187 45.5)"]
+      },
+      "campfire-orange-light": {
+        "role": "primary",
+        "displayName": "Campfire Orange Light",
+        "canonical": "#ff8d31",
+        "tonalRamp": ["oklch(15% 0.169 54.4)", "oklch(26% 0.169 54.4)", "oklch(38% 0.169 54.4)", "oklch(50% 0.169 54.4)", "oklch(62% 0.169 54.4)", "oklch(74% 0.169 54.4)", "oklch(86% 0.169 54.4)", "oklch(95% 0.169 54.4)"]
+      },
+      "signal-cyan": {
+        "role": "secondary",
+        "displayName": "Signal Cyan",
+        "canonical": "#1eb9bd",
+        "tonalRamp": ["oklch(15% 0.117 197.7)", "oklch(26% 0.117 197.7)", "oklch(38% 0.117 197.7)", "oklch(50% 0.117 197.7)", "oklch(62% 0.117 197.7)", "oklch(74% 0.117 197.7)", "oklch(86% 0.117 197.7)", "oklch(95% 0.117 197.7)"]
+      },
+      "dusk-pink": {
+        "role": "tertiary",
+        "displayName": "Dusk Pink",
+        "canonical": "#da8eb8",
+        "tonalRamp": ["oklch(15% 0.106 345.8)", "oklch(26% 0.106 345.8)", "oklch(38% 0.106 345.8)", "oklch(50% 0.106 345.8)", "oklch(62% 0.106 345.8)", "oklch(74% 0.106 345.8)", "oklch(86% 0.106 345.8)", "oklch(95% 0.106 345.8)"]
+      },
+      "deep-purple": {
+        "role": "tertiary",
+        "displayName": "Deep Purple",
+        "canonical": "#61266c",
+        "tonalRamp": ["oklch(15% 0.128 321.1)", "oklch(26% 0.128 321.1)", "oklch(38% 0.128 321.1)", "oklch(50% 0.128 321.1)", "oklch(62% 0.128 321.1)", "oklch(74% 0.128 321.1)", "oklch(86% 0.128 321.1)", "oklch(95% 0.128 321.1)"]
+      },
+      "live-green": {
+        "role": "tertiary",
+        "displayName": "Live Green",
+        "canonical": "#63d98b",
+        "tonalRamp": ["oklch(15% 0.155 152.4)", "oklch(26% 0.155 152.4)", "oklch(38% 0.155 152.4)", "oklch(50% 0.155 152.4)", "oklch(62% 0.155 152.4)", "oklch(74% 0.155 152.4)", "oklch(86% 0.155 152.4)", "oklch(95% 0.155 152.4)"]
+      },
+      "stale-brown": {
+        "role": "tertiary",
+        "displayName": "Stale Brown",
+        "canonical": "#6b4438",
+        "tonalRamp": ["oklch(15% 0.058 37.8)", "oklch(26% 0.058 37.8)", "oklch(38% 0.058 37.8)", "oklch(50% 0.058 37.8)", "oklch(62% 0.058 37.8)", "oklch(74% 0.058 37.8)", "oklch(86% 0.058 37.8)", "oklch(95% 0.058 37.8)"]
+      },
+      "danger-blush": {
+        "role": "tertiary",
+        "displayName": "Danger Blush",
+        "canonical": "#ffbdbd",
+        "tonalRamp": ["oklch(15% 0.076 18.8)", "oklch(26% 0.076 18.8)", "oklch(38% 0.076 18.8)", "oklch(50% 0.076 18.8)", "oklch(62% 0.076 18.8)", "oklch(74% 0.076 18.8)", "oklch(86% 0.076 18.8)", "oklch(95% 0.076 18.8)"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Display", "purpose": "Ginder wordmark on the light festival index." },
+      "headline": { "displayName": "Headline", "purpose": "Setup and major page headings." },
+      "title": { "displayName": "Title", "purpose": "Festival and primary section identity." },
+      "body": { "displayName": "Body", "purpose": "Helper copy, notices, and operational explanation." },
+      "control": { "displayName": "Control", "purpose": "Primary actions and segmented navigation." },
+      "telemetry": { "displayName": "Telemetry", "purpose": "Live state, kickers, and compact map metadata." }
+    },
+    "shadows": [
+      { "name": "operational-card", "value": "0 14px 34px rgba(0,0,0,.24)", "purpose": "Low ambient separation for map and admin cards." },
+      { "name": "floating-dock", "value": "0 14px 38px rgba(0,0,0,.48)", "purpose": "Strong separation for the fixed location-sharing dock." },
+      { "name": "map-micro-control", "value": "0 6px 18px rgba(0,0,0,.32)", "purpose": "Compact controls floating over festival artwork." },
+      { "name": "primary-action-warmth", "value": "0 8px 20px rgba(243,107,23,.17)", "purpose": "Restrained warmth under the night-mode primary action." }
+    ],
+    "motion": [
+      { "name": "state-fast", "value": ".16s ease", "purpose": "Map surface visibility changes." },
+      { "name": "state-standard", "value": ".18s ease", "purpose": "Marker, label, and switch state changes." },
+      { "name": "attention-pulse", "value": "1.9s ease-in-out infinite", "purpose": "GPS and meeting-point attention with a reduced-motion override." }
+    ],
+    "breakpoints": [
+      { "name": "compact-phone", "value": "420px" },
+      { "name": "setup-stack", "value": "620px" },
+      { "name": "wide-map", "value": "720px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Directory Action",
+      "kind": "button",
+      "refersTo": "button-directory",
+      "description": "The flat light-mode action used to enter a festival.",
+      "html": "<a class=\"ds-directory-action\" href=\"#\">Open kaart</a>",
+      "css": ".ds-directory-action { display:inline-flex; align-items:center; justify-content:center; min-height:42px; padding:0 16px; border:0; border-radius:999px; background:#22201e; color:#f3efe5; text-decoration:none; font:800 13px ui-rounded, system-ui, sans-serif; white-space:nowrap; }"
+    },
+    {
+      "name": "Operational Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The dominant action for live location and calibration work.",
+      "html": "<button class=\"ds-btn-primary\">Deel locatie</button>",
+      "css": ".ds-btn-primary { display:inline-flex; align-items:center; justify-content:center; width:100%; min-height:42px; border:0; border-radius:12px; background:linear-gradient(135deg,#f36b17,#ff8d31); color:#2a1023; box-shadow:0 8px 20px rgba(243,107,23,.17); font:900 13px ui-rounded,system-ui,sans-serif; padding:10px 12px; } .ds-btn-primary:active:not(:disabled) { transform:translateY(1px); } .ds-btn-primary:disabled { opacity:.42; }"
+    },
+    {
+      "name": "Operational Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "A supporting action that stays subordinate to Campfire Orange.",
+      "html": "<button class=\"ds-btn-secondary\">Neem huidige GPS</button>",
+      "css": ".ds-btn-secondary { width:100%; min-height:42px; border:1px solid rgba(30,185,189,.38); border-radius:12px; background:rgba(30,185,189,.12); color:#f8e8d1; font:900 13px ui-rounded,system-ui,sans-serif; padding:10px 12px; } .ds-btn-secondary:disabled { opacity:.42; }"
+    },
+    {
+      "name": "Room Tabs",
+      "kind": "nav",
+      "refersTo": "tab-active",
+      "description": "The two-option selector for group and public map rooms.",
+      "html": "<nav class=\"ds-room-tabs\"><button>Groep</button><button class=\"ds-active\">Publiek</button></nav>",
+      "css": ".ds-room-tabs { display:grid; grid-template-columns:1fr 1fr; gap:4px; padding:4px; border:1px solid rgba(248,232,209,.16); border-radius:14px; background:rgba(0,0,0,.14); } .ds-room-tabs button { min-height:38px; border:0; border-radius:10px; background:transparent; color:rgba(248,232,209,.68); font:900 13px ui-rounded,system-ui,sans-serif; } .ds-room-tabs .ds-active { background:#1eb9bd; color:#211120; }"
+    },
+    {
+      "name": "Operational Card",
+      "kind": "card",
+      "refersTo": "card-operational",
+      "description": "A low-elevation plum container for map and administrative content.",
+      "html": "<section class=\"ds-operational-card\"><strong>Festival live</strong><small>1 actief · 5 ankers</small></section>",
+      "css": ".ds-operational-card { display:grid; gap:3px; padding:12px; border:1px solid rgba(218,142,184,.34); border-radius:18px; background:linear-gradient(165deg,rgba(53,24,41,.94),rgba(35,17,32,.96)); color:#f8e8d1; box-shadow:0 14px 34px rgba(0,0,0,.24); font-family:ui-rounded,system-ui,sans-serif; } .ds-operational-card strong { font-size:13px; } .ds-operational-card small { color:rgba(248,232,209,.68); font-size:9px; }"
+    },
+    {
+      "name": "Operational Input",
+      "kind": "input",
+      "refersTo": "input-operational",
+      "description": "A dark inset field used for setup and map administration.",
+      "html": "<input class=\"ds-input\" value=\"Hoofdingang\" aria-label=\"Naam anker\">",
+      "css": ".ds-input { width:100%; min-height:40px; padding:0 10px; border:1px solid rgba(248,232,209,.16); border-radius:10px; outline:none; background:rgba(0,0,0,.16); color:#f8e8d1; font:400 12px/1.45 ui-rounded,system-ui,sans-serif; } .ds-input:focus { border-color:#1eb9bd; }"
+    },
+    {
+      "name": "Live Status Pill",
+      "kind": "chip",
+      "description": "A compact written connection state reinforced by a glowing dot.",
+      "html": "<span class=\"ds-live-pill\"><i></i>live</span>",
+      "css": ".ds-live-pill { display:inline-flex; align-items:center; gap:6px; min-height:29px; padding:0 10px; border:1px solid rgba(248,232,209,.16); border-radius:999px; background:rgba(0,0,0,.16); color:rgba(248,232,209,.68); font:800 10px ui-rounded,system-ui,sans-serif; } .ds-live-pill i { width:7px; height:7px; border-radius:50%; background:#7ee19b; box-shadow:0 0 10px rgba(126,225,155,.6); }"
+    },
+    {
+      "name": "Live Presence Marker",
+      "kind": "custom",
+      "description": "The signature live-map identity marker with freshness and ownership cues.",
+      "html": "<div class=\"ds-marker ds-own\"><span class=\"ds-avatar\">JB</span><i class=\"ds-presence\"></i><b>Jij</b></div>",
+      "css": ".ds-marker { position:relative; display:grid; place-items:center; width:34px; height:34px; border:2px solid #e9f8ec; border-radius:50%; background:#4fb975; box-shadow:0 4px 14px rgba(0,0,0,.46),0 0 0 5px rgba(79,185,117,.2); font-family:ui-rounded,system-ui,sans-serif; } .ds-marker.ds-own { box-shadow:0 4px 14px rgba(0,0,0,.46),0 0 0 6px rgba(79,185,117,.22); } .ds-avatar { color:#211120; font-size:9px; font-weight:900; } .ds-presence { position:absolute; right:-2px; bottom:-2px; width:11px; height:11px; border:2px solid #211120; border-radius:50%; background:#63d98b; box-shadow:0 0 10px rgba(99,217,139,.72); } .ds-marker b { position:absolute; top:calc(100% + 4px); left:50%; transform:translateX(-50%); padding:4px 7px; border:1px solid rgba(99,217,139,.35); border-radius:999px; background:rgba(27,65,42,.94); color:#effff3; font-size:9px; white-space:nowrap; }"
+    },
+    {
+      "name": "Location Control Dock",
+      "kind": "custom",
+      "description": "The strongest elevated surface, keeping sharing controls reachable above safe areas.",
+      "html": "<section class=\"ds-control-dock\"><button>Deel locatie</button><span>Live · 10 min</span></section>",
+      "css": ".ds-control-dock { display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:7px; padding:7px; border:1px solid rgba(248,232,209,.2); border-radius:16px; background:rgba(40,18,35,.96); color:#f8e8d1; box-shadow:0 14px 38px rgba(0,0,0,.48); backdrop-filter:blur(18px); font-family:ui-rounded,system-ui,sans-serif; } .ds-control-dock button { min-height:42px; border:0; border-radius:12px; background:linear-gradient(135deg,#f36b17,#ff8d31); color:#2a1023; font-weight:900; } .ds-control-dock span { color:rgba(248,232,209,.68); font-size:10px; font-weight:900; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Festival Field Guide",
+    "overview": "Ginder behaves like a practical festival field guide with two deliberate registers. The public festival index is a calm paper page: warm, flat, editorial, and sparse. Once a visitor enters live festival work, the guide opens into a compact night-time instrument panel built from aubergine surfaces, cream text, bright signals, and the supplied festival artwork.\n\nThe system is practical, lively, and clear. Festival character comes from the rounded type, location-pin geometry, star-speckled atmosphere, and orange–cyan signal pair; it never outranks the map, the current state, or the next action. Density rises in operational views because the phone is a tool in motion, while setup uses larger grouped fields for deliberate administrative work.",
+    "keyCharacteristics": [
+      "A purposeful light-to-dark context switch rather than one blended theme.",
+      "Rounded, heavy typography with compressed labels and decisive hierarchy.",
+      "Warm festival neutrals anchored by orange actions and cyan selection states.",
+      "Illustrated festival maps treated as primary product material, not decoration.",
+      "Compact controls, safe-area-aware shells, and visible live/stale state changes."
+    ],
+    "rules": [
+      { "name": "The Context Switch Rule", "body": "Field Paper and Field Ink own selection surfaces; Night Aubergine and Plum Panel own live tools. Do not merge them into a grey compromise.", "section": "colors" },
+      { "name": "The Signal Color Rule", "body": "Orange means action or owned attention, cyan means active selection or information, and green versus brown means freshness. Never swap these roles for variety.", "section": "colors" },
+      { "name": "The One Rounded Voice Rule", "body": "Do not introduce a fashionable display face or generic geometric sans; hierarchy comes from scale, weight, and tracking within the existing rounded system stack.", "section": "typography" },
+      { "name": "The Glance Rule", "body": "Operational labels stay short and bold. Explanations use body text outside the control rather than shrinking a long sentence into it.", "section": "typography" },
+      { "name": "The Map-First Rule", "body": "In live operation, the festival artwork and people layer receive the largest continuous region. Controls wrap around the map rather than pushing it below an explanatory dashboard.", "section": "layout" },
+      { "name": "The Contextual Lift Rule", "body": "Light directory surfaces are flat; blur and shadow appear only where a night-time control must separate from live map content.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do preserve the explicit light index / dark operation split when adding a surface; choose its context instead of averaging both palettes.",
+      "Do keep the illustrated festival map visually dominant and align interface chrome around it.",
+      "Do use Campfire Orange, Signal Cyan, Live Green, and Stale Brown according to their established meanings.",
+      "Do use short Dutch labels, heavy control type, and safe-area-aware mobile spacing.",
+      "Do pair color state with text, shape, glow, saturation, or another non-color cue."
+    ],
+    "donts": [
+      "Don't turn the light festival index into a stack of floating dark cards or add night-mode gradients to its Field Paper canvas.",
+      "Don't cover the festival map with explanatory panels when a compact badge, tooltip, or dock can carry the state.",
+      "Don't use orange, cyan, green, and brown interchangeably for decorative variety.",
+      "Don't introduce unrelated fonts, sharp enterprise controls, or generic blue-and-white SaaS styling.",
+      "Don't animate attention states without a reduced-motion fallback."
+    ]
+  }
+}
