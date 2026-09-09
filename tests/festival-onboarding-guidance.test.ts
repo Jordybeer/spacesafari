@@ -2,7 +2,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PersistedFestival } from "@/src/lib/festival-store";
 
 const telegram = vi.hoisted(() => ({
-  sendMessage: vi.fn(async () => ({})),
+  sendMessage: vi.fn<(
+    chatId: string | number,
+    text: string,
+    options?: Record<string, unknown>,
+  ) => Promise<Record<string, never>>>(async () => ({})),
 }));
 
 vi.mock("@/src/lib/telegram", () => ({
