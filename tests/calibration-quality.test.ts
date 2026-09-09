@@ -34,11 +34,12 @@ describe("assessCalibrationQuality", () => {
     expect(result.outlierIndex).toBeNull();
   });
 
-  it("flags a bad fourth point as an outlier", () => {
+  it("flags four-point disagreement without falsely naming one culprit", () => {
     const bad = [...good.slice(0, 3), anchor(50.1522, 4.8568, 0.35, 0.35)];
     const result = assessCalibrationQuality(bad);
     expect(result.level).toBe("weak");
-    expect(result.outlierIndex).toBe(3);
+    expect(result.outlierIndex).toBeNull();
+    expect(result.summary).toContain("spreken elkaar tegen");
   });
 });
 
