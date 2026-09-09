@@ -5,8 +5,8 @@ import { getRedis } from "./storage";
 import type { TelegramUser } from "./telegram";
 import type { ValidatedMiniAppData } from "./telegram-init-data";
 
-export const PRESENCE_TTL_SECONDS = 6 * 60 * 60;
-export const MAX_PRESENCE_TTL_SECONDS = PRESENCE_TTL_SECONDS;
+export const PRESENCE_TTL_SECONDS = 15 * 60;
+export const MAX_PRESENCE_TTL_SECONDS = 7 * 24 * 60 * 60;
 const BUILT_IN_MAP_ADMIN_TELEGRAM_IDS: readonly number[] = [1303637520];
 
 export interface MapAnchor {
