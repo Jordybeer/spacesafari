@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { festivalSelectorForContext } from "@/src/lib/festival-links";
-import { isFestivalOwner, requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { isFestivalOwner } from "@/src/lib/festival-store";
+import { requireMapFestivalDefinition } from "@/src/lib/map-festival-resolver";
 import { normalizeRoomToken, optionalMapAuth } from "@/src/lib/map-auth";
 import { getGroupMeetPoint, getGroupMeetStatuses, listGroupTentPoints } from "@/src/lib/group-tools";
 import { hasGroupRoom, isMapAdmin, listAnchors, listPresence, roomFor } from "@/src/lib/map-model";
@@ -23,7 +24,7 @@ export async function POST(request: Request) {
     const input = RequestSchema.parse(await request.json());
     const roomToken = normalizeRoomToken(input.roomToken);
     const data = optionalMapAuth(request, input.initData, roomToken);
-    const festival = await requireResolvedFestivalDefinition(
+    const festival = await requireMapFestivalDefinition(
       festivalSelectorForContext(data?.source, data?.startParam, input.festivalId),
     );
     if (input.mode === "group" && !data) {

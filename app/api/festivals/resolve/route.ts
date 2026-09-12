@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { resolveFestivalDefinition } from "@/src/lib/festival-store";
+import { resolveMapFestivalDefinition } from "@/src/lib/map-festival-resolver";
 import { DEFAULT_FESTIVAL_ID } from "@/src/lib/festivals";
 
 export const runtime = "nodejs";
@@ -10,7 +10,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url);
     const selector = url.searchParams.get("selector")?.trim() || DEFAULT_FESTIVAL_ID;
     if (selector.length > 64) throw new Error("Ongeldige festivalselector.");
-    const festival = await resolveFestivalDefinition(selector);
+    const festival = await resolveMapFestivalDefinition(selector);
     if (!festival) {
       return NextResponse.json({ error: "Festival niet gevonden." }, { status: 404 });
     }
