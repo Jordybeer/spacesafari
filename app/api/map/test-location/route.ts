@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { festivalSelectorForContext } from "@/src/lib/festival-links";
-import { isFestivalOwner, requireResolvedFestivalDefinition } from "@/src/lib/festival-store";
+import { isFestivalOwner } from "@/src/lib/festival-store";
+import { requireMapFestivalDefinition } from "@/src/lib/map-festival-resolver";
 import { normalizeRoomToken, requireMapAuth } from "@/src/lib/map-auth";
 import { isMapAdmin, listAnchors, putPresence, roomFor, stopPresence } from "@/src/lib/map-model";
 import { isRedisConfigured } from "@/src/lib/storage";
@@ -32,7 +33,7 @@ export async function POST(request: Request) {
   try {
     const input = RequestSchema.parse(await request.json());
     const data = requireMapAuth(request, input.initData, normalizeRoomToken(input.roomToken));
-    const festival = await requireResolvedFestivalDefinition(
+    const festival = await requireMapFestivalDefinition(
       festivalSelectorForContext(data.source, data.startParam, input.festivalId),
     );
     if (!isMapAdmin(data.user.id) && !isFestivalOwner(festival, data.user.id)) {
