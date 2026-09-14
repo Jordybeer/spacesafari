@@ -24,6 +24,20 @@ export function optionalMapAuth(
   const session = readWebSession(request);
   if (!session) return null;
   const token = normalizeRoomToken(roomToken);
+
+  // WhatsApp guests are deliberately bound to the one opaque room token that
+  // created their pseudonymous browser session. They cannot turn that session
+  // into access to a different private room by editing the URL.
+  if (session.provider === "whatsapp") {
+    if (!token || session.roomToken !== token) return null;
+    return {
+      user: session.user,
+      authDate: Math.floor(Date.now() / 1000),
+      startParam: `room_${token}`,
+      source: "web",
+    };
+  }
+
   return {
     user: session.user,
     authDate: Math.floor(Date.now() / 1000),
@@ -38,6 +52,6 @@ export function requireMapAuth(
   roomToken?: string,
 ): MapAuthData {
   const data = optionalMapAuth(request, initData, roomToken);
-  if (!data) throw new Error("Log in met Telegram om deze functie te gebruiken");
+  if (!data) throw new Error("Log in met Telegram of open een geldige WhatsApp-groepslink om deze functie te gebruiken");
   return data;
 }
