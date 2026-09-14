@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { assessCalibrationQuality } from "@/src/lib/calibration-quality";
 import {
   setupStatusFor,
   updatePersistedFestival,
@@ -204,6 +205,7 @@ export async function POST(request: Request) {
         mapX: anchor.mapX,
         mapY: anchor.mapY,
       })),
+      calibrationQuality: assessCalibrationQuality(anchors),
       timetable: publicSchedule(schedule, festival.timezone),
     }, { headers: { "cache-control": "no-store" } });
   } catch (error) {

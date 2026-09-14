@@ -16,6 +16,10 @@ export interface FestivalDefinition {
   mapImageHeight: number;
   venueCenter: FestivalCoordinate;
   venueMaxDistanceMeters: number;
+  venueLabel?: string;
+  startsOn?: string;
+  endsOn?: string;
+  published?: boolean;
 }
 
 export const DEFAULT_FESTIVAL_ID = "space-safari-2026";
@@ -31,11 +35,25 @@ export const SPACE_SAFARI_2026: FestivalDefinition = {
   mapImageHeight: 800,
   venueCenter: { latitude: 50.15654, longitude: 4.85366 },
   venueMaxDistanceMeters: 3_000,
+  venueLabel: "Massembre",
+  startsOn: "2026-09-04",
+  endsOn: "2026-09-06",
+  published: true,
 };
 
 const BUILT_IN_FESTIVALS = new Map<string, FestivalDefinition>([
   [SPACE_SAFARI_2026.id, SPACE_SAFARI_2026],
 ]);
+
+/**
+ * The attendee-facing directory is deliberately curated by Ginder. Draft or
+ * privately configured festivals never appear just because they exist in storage.
+ */
+export function listPublishedFestivals(): FestivalDefinition[] {
+  return Array.from(BUILT_IN_FESTIVALS.values())
+    .filter((festival) => festival.published !== false && festival.status === "ready")
+    .sort((a, b) => (a.startsOn ?? `${a.year}`).localeCompare(b.startsOn ?? `${b.year}`));
+}
 
 /**
  * Custom festival IDs and public selectors contain an opaque random suffix, so their

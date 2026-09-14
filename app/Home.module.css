@@ -54,13 +54,16 @@
   color: #6e6861;
 }
 
+.festivalList {
+  border-top: 1px solid #cbc4b9;
+}
+
 .festival {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 18px;
   align-items: center;
   padding: 20px 0;
-  border-top: 1px solid #cbc4b9;
   border-bottom: 1px solid #cbc4b9;
 }
 
@@ -90,6 +93,11 @@
   font-size: 13px;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.open:focus-visible {
+  outline: 3px solid #f36b17;
+  outline-offset: 3px;
 }
 
 .foot {
